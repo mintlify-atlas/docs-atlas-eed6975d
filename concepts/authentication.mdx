@@ -1,0 +1,183 @@
+---
+title: "Authentication"
+description: "Authentication methods supported by SQL Tools Service"
+---
+
+SQL Tools Service supports several authentication methods for connecting to SQL Server and Azure SQL. The method is selected by setting `authenticationType` in `ConnectionDetails`.
+
+## Authentication Types
+
+Set `authenticationType` to one of the following string values:
+
+| Value                       | Description                                                 |
+|:----------------------------|:------------------------------------------------------------|
+| `"SqlLogin"`                | SQL Server username and password                            |
+| `"Integrated"`              | Windows Integrated (Kerberos / NTLM) — no credentials needed |
+| `"AzureMFA"`                | Azure Active Directory / Microsoft Entra ID with MFA        |
+| `"ActiveDirectoryInteractive"` | Azure AD interactive authentication                      |
+| `"ActiveDirectoryPassword"` | Azure AD username and password                              |
+| `"dstsAuth"`                | DSTS (Device Security Token Service) authentication         |
+
+These values are defined in the service's constants and are case-sensitive in the `authenticationType` field.
+
+---
+
+## SQL Login
+
+The simplest authentication method. Provide a username and password for a SQL Server login.
+
+**Required fields:** `userName`, `password`
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connection": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "AdventureWorks",
+      "authenticationType": "SqlLogin",
+      "userName": "sqladmin",
+      "password": "..."
+    }
+  }
+}
+```
+
+<Warning>
+Never log, display, or store `password` values in plaintext. The service itself avoids logging passwords. When building integrations, treat the password field as an opaque secret — retrieve it from a secure credential store at connection time.
+</Warning>
+
+---
+
+## Windows Integrated Authentication
+
+Uses the current Windows user identity (Kerberos or NTLM). No username or password fields are required.
+
+**Required fields:** none (credentials come from the OS session)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connection": {
+      "serverName": "myserver",
+      "databaseName": "AdventureWorks",
+      "authenticationType": "Integrated"
+    }
+  }
+}
+```
+
+This mode is only available on Windows (or Linux/macOS with a valid Kerberos configuration). It is not supported for Azure SQL Database.
+
+---
+
+## Azure Active Directory / Microsoft Entra ID
+
+Azure SQL and Azure Synapse require Azure AD (Microsoft Entra ID) authentication. SQL Tools Service supports several Azure AD modes.
+
+### AzureMFA (recommended for interactive tools)
+
+The primary Azure AD mode for desktop tools. The user completes an MFA challenge in a browser or authenticator app. Optionally, a pre-acquired token can be supplied in `azureAccountToken` to avoid re-authenticating.
+
+**Without a pre-acquired token** (the service or host handles the auth flow):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connection": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "AdventureWorks",
+      "authenticationType": "AzureMFA",
+      "userName": "user@contoso.com"
+    }
+  }
+}
+```
+
+**With a pre-acquired token** (the host application already holds an access token):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connection": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "AdventureWorks",
+      "authenticationType": "AzureMFA",
+      "userName": "user@contoso.com",
+      "azureAccountToken": "<access_token>",
+      "expiresOn": 1705312800
+    }
+  }
+}
+```
+
+`expiresOn` is a Unix timestamp (seconds since epoch) indicating when the token expires. The service uses this to determine whether the token needs to be refreshed.
+
+### ActiveDirectoryInteractive
+
+Triggers an interactive browser-based sign-in via MSAL. This is the `AuthenticationMethod.ActiveDirectoryInteractive` mode defined in the `Microsoft.SqlTools.Authentication` assembly.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connection": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "AdventureWorks",
+      "authenticationType": "ActiveDirectoryInteractive",
+      "userName": "user@contoso.com"
+    }
+  }
+}
+```
+
+### ActiveDirectoryPassword
+
+Authenticates with an Azure AD username and password directly (no browser prompt). Requires the account to not have MFA enforced.
+
+**Required fields:** `userName`, `password`
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connection": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "AdventureWorks",
+      "authenticationType": "ActiveDirectoryPassword",
+      "userName": "user@contoso.com",
+      "password": "..."
+    }
+  }
+}
+```
+
+---
+
+## Password Security
+
+- **Never log passwords.** The `password` and `azureAccountToken` fields must never appear in logs or diagnostic output.
+- **Use credential stores.** Retrieve secrets from the OS keychain, a secrets manager, or an encrypted store — not from source code or config files.
+- **Token expiry.** When using `azureAccountToken`, always populate `expiresOn` so the service can detect and handle token refresh before the token expires.
+- **Omit when not needed.** For `Integrated` and `AzureMFA` (without pre-acquired token), do not send a `password` field at all.

@@ -1,0 +1,275 @@
+---
+title: "Schema Compare"
+description: "Compare and synchronize database schemas"
+---
+
+Schema Compare lets you diff two database schemas — from live databases, `.dacpac` files, or SQL projects — and selectively apply the differences. The typical workflow is: compare, review differences, optionally include/exclude individual changes, then publish or generate a script.
+
+## Workflow
+
+<Steps>
+  <Step title="Compare">
+    Send `schemaCompare/compare` with source and target endpoint info. The response contains a list of `DiffEntry` objects describing every schema difference.
+  </Step>
+  <Step title="Review and filter">
+    Use `schemaCompare/includeExcludeNode` to include or exclude individual differences from the apply set.
+  </Step>
+  <Step title="Apply changes">
+    Send `schemaCompare/publishDatabase` to apply accepted changes directly to a target database, or `schemaCompare/generateScript` to produce a T-SQL change script first.
+  </Step>
+</Steps>
+
+---
+
+## schemaCompare/compare
+
+Compares two schema endpoints and returns the list of differences.
+
+### Endpoint types
+
+Both `sourceEndpointInfo` and `targetEndpointInfo` use the same shape. Set `endpointType` to indicate the source:
+
+| `endpointType` | Description |
+|---|---|
+| `0` — `Database` | Live SQL Server database (requires `ownerUri` or `connectionDetails`) |
+| `1` — `Dacpac` | `.dacpac` file on disk (requires `packageFilePath`) |
+| `2` — `Project` | SQL database project (requires `projectFilePath`) |
+
+### Request parameters
+
+<ParamField body="operationId" type="string">
+  Client-supplied ID to track this comparison across related requests. Reuse this ID in subsequent `includeExcludeNode`, `generateScript`, and `publishDatabase` calls.
+</ParamField>
+
+<ParamField body="sourceEndpointInfo" type="object" required>
+  The schema to treat as the source (reference) for the diff.
+
+  <Expandable title="endpoint properties">
+    <ParamField body="endpointType" type="number" required>
+      `0` = Database, `1` = Dacpac, `2` = Project.
+    </ParamField>
+    <ParamField body="ownerUri" type="string">
+      Connection URI (for `Database` endpoints).
+    </ParamField>
+    <ParamField body="databaseName" type="string">
+      Database name (for `Database` endpoints).
+    </ParamField>
+    <ParamField body="packageFilePath" type="string">
+      Path to `.dacpac` file (for `Dacpac` endpoints).
+    </ParamField>
+    <ParamField body="projectFilePath" type="string">
+      Path to `.sqlproj` file (for `Project` endpoints).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="targetEndpointInfo" type="object" required>
+  The schema to compare against the source.
+</ParamField>
+
+<ParamField body="deploymentOptions" type="object">
+  DacFx deployment options controlling which object types to compare, whether to ignore permissions, etc.
+</ParamField>
+
+<ParamField body="taskExecutionMode" type="string">
+  `"Execute"` (default) runs the comparison; `"Script"` is not applicable here.
+</ParamField>
+
+### Response
+
+<ResponseField name="operationId" type="string" required>
+  Operation ID to pass to subsequent requests.
+</ResponseField>
+
+<ResponseField name="areEqual" type="boolean" required>
+  `true` if source and target schemas are identical.
+</ResponseField>
+
+<ResponseField name="differences" type="object[]">
+  List of `DiffEntry` objects, each describing one schema difference.
+
+  <Expandable title="DiffEntry properties">
+    <ResponseField name="updateAction" type="string">
+      What action would be taken: `Add`, `Change`, or `Delete`.
+    </ResponseField>
+    <ResponseField name="differenceType" type="string">
+      Category of the difference: `Object` or `PartialObject`.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Name of the differing object.
+    </ResponseField>
+    <ResponseField name="sourceObjectType" type="string">
+      Object type in the source schema.
+    </ResponseField>
+    <ResponseField name="targetObjectType" type="string">
+      Object type in the target schema.
+    </ResponseField>
+    <ResponseField name="sourceScript" type="string">
+      T-SQL definition from the source.
+    </ResponseField>
+    <ResponseField name="targetScript" type="string">
+      T-SQL definition from the target.
+    </ResponseField>
+    <ResponseField name="included" type="boolean">
+      Whether this difference is included in the apply set.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "schemaCompare/compare",
+  "params": {
+    "operationId": "op-001",
+    "sourceEndpointInfo": {
+      "endpointType": 1,
+      "packageFilePath": "/builds/MyApp.dacpac"
+    },
+    "targetEndpointInfo": {
+      "endpointType": 0,
+      "ownerUri": "file:///workspace/prod.sql",
+      "databaseName": "MyAppDB"
+    }
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "operationId": "op-001",
+    "areEqual": false,
+    "success": true,
+    "differences": [
+      {
+        "updateAction": "Add",
+        "differenceType": "Object",
+        "name": "dbo.NewTable",
+        "sourceObjectType": "Table",
+        "targetObjectType": null,
+        "included": true
+      }
+    ]
+  }
+}
+```
+
+---
+
+## schemaCompare/includeExcludeNode
+
+Toggles whether a specific difference is included in the apply set. The response reports any dependency changes triggered by the toggle.
+
+### Request parameters
+
+<ParamField body="operationId" type="string" required>
+  The operation ID from the original `compare` call.
+</ParamField>
+
+<ParamField body="diffEntry" type="object" required>
+  The `DiffEntry` to include or exclude (as returned by `compare`).
+</ParamField>
+
+<ParamField body="includeRequest" type="boolean" required>
+  `true` to include; `false` to exclude this difference.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  Whether the include/exclude was applied.
+</ResponseField>
+
+<ResponseField name="affectedDependencies" type="object[]">
+  Other differences that were automatically toggled due to dependencies.
+</ResponseField>
+
+<ResponseField name="blockingDependencies" type="object[]">
+  Differences that prevented this toggle from being applied.
+</ResponseField>
+
+---
+
+## schemaCompare/generateScript
+
+Generates a T-SQL change script for all included differences without applying them to the database.
+
+### Request parameters
+
+<ParamField body="operationId" type="string" required>
+  The operation ID from the original `compare` call.
+</ParamField>
+
+<ParamField body="targetServerName" type="string" required>
+  Target server name for the generated script.
+</ParamField>
+
+<ParamField body="targetDatabaseName" type="string" required>
+  Target database name for the generated script.
+</ParamField>
+
+<ParamField body="taskExecutionMode" type="string">
+  `"Execute"` (default).
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  Whether the script was generated successfully.
+</ResponseField>
+
+---
+
+## schemaCompare/publishDatabase
+
+Applies all included differences directly to the target database.
+
+### Request parameters
+
+<ParamField body="operationId" type="string" required>
+  The operation ID from the original `compare` call.
+</ParamField>
+
+<ParamField body="targetServerName" type="string" required>
+  Name of the server hosting the target database.
+</ParamField>
+
+<ParamField body="targetDatabaseName" type="string" required>
+  Name of the target database to update.
+</ParamField>
+
+<ParamField body="taskExecutionMode" type="string">
+  `"Execute"` (default) or `"Script"` to preview first.
+</ParamField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "schemaCompare/publishDatabase",
+  "params": {
+    "operationId": "op-001",
+    "targetServerName": "prod-server",
+    "targetDatabaseName": "MyAppDB",
+    "taskExecutionMode": "Execute"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "success": true
+  }
+}
+```

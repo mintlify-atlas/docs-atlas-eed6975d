@@ -1,0 +1,75 @@
+---
+title: "Language Service API Overview"
+description: "SQL IntelliSense, diagnostics, and language features"
+---
+
+The Language Service provides editor intelligence for SQL files: real-time diagnostics, completions, hover information, signature help, go-to-definition, and find references. It is compatible with the [VS Code Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/), so any LSP-capable editor can integrate with it using standard protocol messages.
+
+## What the language service provides
+
+- **Diagnostics** — SQL syntax and semantic errors reported as you type via `textDocument/publishDiagnostics`
+- **Completions** — keyword, table, column, and schema suggestions via `textDocument/completion`
+- **Hover information** — type and object documentation on `textDocument/hover`
+- **Signature help** — function/procedure parameter hints via `textDocument/signatureHelp`
+- **Go-to-definition** — navigate to a table or object definition via `textDocument/definition`
+- **Find references** — locate all usages of an object via `textDocument/references`
+- **Extension completions** — load custom completion assemblies via `completion/extLoad`
+
+## Connection management prerequisite
+
+The language service operates on connection-bound SQL documents. Before language features activate for a file, you must connect that file's `ownerUri` using `connection/connect`. Once connected, the service parses the document and begins providing diagnostics and completions.
+
+## Supported LSP methods
+
+### Lifecycle
+
+| Method | Direction | Description |
+|---|---|---|
+| `initialize` | Client → Service | Initialize the language server and negotiate capabilities |
+| `shutdown` | Client → Service | Request a graceful shutdown |
+| `exit` | Client → Service (notification) | Terminate the process after `shutdown` |
+
+### Workspace
+
+| Method | Direction | Description |
+|---|---|---|
+| `workspace/didChangeConfiguration` | Client → Service (notification) | Send updated settings to the service |
+| `workspace/didChangeWatchedFiles` | Client → Service (notification) | Notify when watched files change on disk |
+
+### Document synchronization
+
+| Method | Direction | Description |
+|---|---|---|
+| `textDocument/didOpen` | Client → Service (notification) | Register a document with the language service |
+| `textDocument/didChange` | Client → Service (notification) | Send incremental or full content updates |
+| `textDocument/didClose` | Client → Service (notification) | Unregister a document |
+| `textDocument/didSave` | Client → Service (notification) | Notify on document save |
+
+### Language features
+
+| Method | Direction | Description |
+|---|---|---|
+| `textDocument/completion` | Client → Service (request) | Get completion items at a cursor position |
+| `completionItem/resolve` | Client → Service (request) | Fetch full documentation for a completion item |
+| `textDocument/hover` | Client → Service (request) | Get hover info for the symbol under the cursor |
+| `textDocument/signatureHelp` | Client → Service (request) | Get function/procedure parameter signatures |
+| `textDocument/definition` | Client → Service (request) | Navigate to the definition of a symbol |
+| `textDocument/references` | Client → Service (request) | Find all references to a symbol |
+
+### Diagnostics
+
+| Method | Direction | Description |
+|---|---|---|
+| `textDocument/publishDiagnostics` | Service → Client (notification) | Push SQL parse and semantic errors to the editor |
+
+## Non-LSP extensions
+
+| Method | Direction | Description |
+|---|---|---|
+| `completion/extLoad` | Client → Service (request) | Load an external .NET assembly that contributes custom completion items |
+
+## Next steps
+
+<Card title="IntelliSense and completions" href="/api/language/intellisense">
+  Full request/response details and JSON examples for completions, hover, signature help, go-to-definition, references, and extension loading.
+</Card>

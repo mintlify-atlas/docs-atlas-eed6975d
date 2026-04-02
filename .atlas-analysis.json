@@ -1,0 +1,144 @@
+{
+  "projectType": "api-service",
+  "projectName": "SQL Tools Service",
+  "projectDescription": "A cross-platform JSON-RPC API service that provides SQL Server database management capabilities including connection management, query execution, language services, and schema tooling for editors and IDE extensions.",
+  "theme": "luma",
+  "primaryColor": "#047bd5",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/jsonrpc-protocol",
+              "concepts/connection-management",
+              "concepts/authentication"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/building",
+              "guides/testing",
+              "guides/contributing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Connection API",
+            "pages": [
+              "api/connection/overview",
+              "api/connection/connect",
+              "api/connection/disconnect"
+            ]
+          },
+          {
+            "group": "Query API",
+            "pages": [
+              "api/query/overview",
+              "api/query/execute",
+              "api/query/results"
+            ]
+          },
+          {
+            "group": "Object Explorer API",
+            "pages": [
+              "api/object-explorer/overview",
+              "api/object-explorer/sessions"
+            ]
+          },
+          {
+            "group": "Schema & Admin API",
+            "pages": [
+              "api/schema/dacfx",
+              "api/schema/schema-compare",
+              "api/schema/scripting"
+            ]
+          },
+          {
+            "group": "Language Service API",
+            "pages": [
+              "api/language/overview",
+              "api/language/intellisense"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "JSON-RPC over stdio communication protocol compatible with VS Code Language Server Protocol",
+    "Connection management for SQL Server, Azure SQL, and other SQL data sources",
+    "Query execution with result set retrieval and export (CSV, JSON, XML, Excel)",
+    "IntelliSense and language service features (completion, hover, diagnostics, go-to-definition)",
+    "Object Explorer for browsing database objects hierarchically",
+    "Schema comparison and DacFx operations (extract, deploy, import, export)",
+    "SQL scripting and object script generation",
+    "SQL Agent job management",
+    "SQL Profiler for extended event session monitoring",
+    "Table Designer for schema design",
+    "SQL Projects support for database project files",
+    "Azure authentication via MSAL with encrypted token cache"
+  ],
+  "publicApiSurface": [
+    "connection/connect",
+    "connection/disconnect",
+    "connection/listdatabases",
+    "connection/changedatabase",
+    "connection/getconnectionstring",
+    "connection/buildconnectioninfo",
+    "connection/connectionchanged (notification)",
+    "connection/complete (notification)",
+    "query/executeString",
+    "query/executeDocumentSelection",
+    "query/executedocumentstatement",
+    "query/subset",
+    "query/cancel",
+    "query/dispose",
+    "query/saveCsv",
+    "query/saveExcel",
+    "query/saveJson",
+    "query/saveXml",
+    "query/executionPlan",
+    "query/simpleexecute",
+    "query/setexecutionoptions",
+    "query/message (notification)",
+    "query/complete (notification)",
+    "objectexplorer/createSession",
+    "objectexplorer/expand",
+    "objectexplorer/refresh",
+    "objectexplorer/closeSession",
+    "objectexplorer/findNodes",
+    "objectexplorer/sessionCreated (notification)",
+    "objectexplorer/expandCompleted (notification)",
+    "textDocument/completion",
+    "textDocument/hover",
+    "textDocument/signatureHelp",
+    "textDocument/definition",
+    "textDocument/references",
+    "completion/extLoad",
+    "dacfx/extract",
+    "dacfx/deploy",
+    "dacfx/import",
+    "dacfx/export",
+    "schemaCompare/compare",
+    "scripting/script",
+    "scripting/listObjects"
+  ]
+}

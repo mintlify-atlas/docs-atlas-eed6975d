@@ -1,0 +1,112 @@
+---
+title: "Contributing"
+description: "How to contribute to SQL Tools Service"
+---
+
+Contributions of all kinds are welcome. Whether you have a feature idea, found a bug, or want to improve the code, the process below explains how to get involved effectively.
+
+<Info>
+  Because SQL Tools Service exposes public APIs consumed by multiple tools, the maintainer team exercises careful judgment over changes that could introduce breaking changes. Some contributions may not be accepted if they risk breaking existing integrations or do not align with project goals.
+</Info>
+
+## Ways to contribute
+
+- **File an issue** — report a bug or request a feature on the [GitHub issue tracker](https://github.com/Microsoft/sqltoolsservice/issues). Creating an issue before sending a pull request is not required, but it can speed up the process by letting the team discuss the approach upfront.
+- **Comment on issues** — share your perspective on how an issue should be fixed or implemented.
+- **Submit a pull request** — implement a bug fix or feature and send a PR for review.
+- **Review pull requests** — review other contributors' PRs to help ensure they follow the established guidelines.
+
+## Code contribution guidelines
+
+Before submitting code, make sure your change meets all of the following:
+
+- Follows the established coding style and design patterns in the codebase.
+- Follows the commit hygiene guidelines below.
+- Includes unit tests that validate the new behavior or bug fix.
+- Passes a **Release** configuration build and all unit tests locally.
+- Addresses all review feedback before the final merge.
+
+## Commit hygiene
+
+Good commit history makes it easier to understand changes, cherry-pick fixes, and revert if needed. Follow these rules:
+
+<AccordionGroup>
+  <Accordion title="Write good commit messages">
+    Commit messages should be clearly written so that anyone reading the log can understand how and why a change was made.
+
+    Use the imperative mood ("Fix bug", not "Fixed bug" or "Fixes bug"). Keep the subject line to 50 characters or fewer and wrap the body at 72 characters.
+
+    ```
+    Fix #3: Catch NullReferenceException from DoThing
+
+    This change adds a try/catch block to catch a NullReferenceException
+    that gets thrown by DoThing when the connection object is null [...]
+    ```
+
+    If your commit resolves a known issue, use the [closing keyword syntax](https://help.github.com/articles/closing-issues-via-commit-messages/) (`Fix #<number>`) so the issue is closed automatically when your PR merges.
+  </Accordion>
+
+  <Accordion title="Squash fixup commits">
+    If you are introducing a new feature across multiple commits — or have "oops" commits that fix a typo or add a forgotten file — [squash those commits](http://gitready.com/advanced/2009/02/10/squashing-commits-with-rebase.html) into a single logical commit before submitting. This keeps the history clean and makes it easier to revert or backport the change.
+  </Accordion>
+
+  <Accordion title="Keep logical commits separate for large changes">
+    For larger changes, it is fine — and encouraged — to keep distinct phases as separate commits. For example, if you reorganize files before adding new functionality, put the file moves in one commit and the feature additions in another. This keeps large PRs readable and reviewable.
+  </Accordion>
+</AccordionGroup>
+
+## Unit tests
+
+Include [nUnit](http://nunit.org/) tests with any new feature or bug fix. The project uses both component-level and scenario-level tests. You do not need to cover every edge case — testing mainline scenarios and the most common failure paths is sufficient.
+
+If you find a reproducible bug, filing an issue that includes a unit test demonstrating the problem is a great way to help the team implement a targeted fix quickly.
+
+## Build before submitting
+
+Run a **Release** configuration build before sending your PR:
+
+```bash
+dotnet build src/Microsoft.SqlTools.ServiceLayer --configuration Release
+```
+
+The Release build enforces that all public API members are documented. If any public APIs are missing XML documentation comments, the build will fail. This check ensures the project always produces accurate generated documentation.
+
+## Pull request process
+
+<Steps>
+  <Step title="Create a branch">
+    Direct commits to `main` are not allowed. Create a new branch from `main` for your change:
+
+    ```bash
+    git checkout main
+    git pull
+    git checkout -b my-feature-branch
+    ```
+
+    See [About branches](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-branches) for more information.
+  </Step>
+
+  <Step title="Open the pull request">
+    Push your branch and [open a pull request](https://help.github.com/articles/using-pull-requests/) from your fork. In the PR description, include a high-level summary of the changes so reviewers understand the intent. You should receive initial feedback within a day or two — ping the thread if things are taking longer than expected.
+  </Step>
+
+  <Step title="Ensure tests pass">
+    All unit tests must pass before your PR can be merged. Verify locally before pushing:
+
+    ```bash
+    dotnet test test/Microsoft.SqlTools.ServiceLayer.UnitTests
+    ```
+  </Step>
+
+  <Step title="Respond to review feedback">
+    If reviewers request changes, push them as new commits to your branch rather than amending history. This makes it easier for reviewers to see what changed between review passes and avoids disrupting GitHub's PR diff view.
+  </Step>
+
+  <Step title="Final rebase (if requested)">
+    Once your changes are approved, maintainers may ask you to do a final rebase to clean up your commit history according to the project's commit guidelines. Follow any specific guidance given. After your final push, the maintainers will merge your changes.
+  </Step>
+</Steps>
+
+## Breaking changes policy
+
+This project exposes public APIs used by multiple downstream tools. Any change to a public API requires careful consideration. Contributions that introduce breaking changes may not be accepted. If you are unsure whether a change is breaking, file an issue first to discuss it with the maintainer team.

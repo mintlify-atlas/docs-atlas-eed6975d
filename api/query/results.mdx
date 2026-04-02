@@ -1,0 +1,445 @@
+---
+title: "Results and Export"
+description: "Retrieve result sets and export data to files"
+---
+
+After a query completes, use `query/subset` to read result rows on demand. You can also retrieve the execution plan for a result set or export results to CSV, Excel, JSON, or XML.
+
+All methods on this page require an `ownerUri` that matches the one used in the original execute request. Use `batchIndex` and `resultSetIndex` from the `query/complete` notification to address a specific result set.
+
+## query/subset
+
+Retrieve a paginated window of rows from a result set.
+
+### Parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the query whose results you want to read.
+</ParamField>
+
+<ParamField body="batchIndex" type="number" required>
+  0-based index of the batch that produced the result set. Corresponds to `BatchSummary.id` in the `query/complete` notification.
+</ParamField>
+
+<ParamField body="resultSetIndex" type="number" required>
+  0-based index of the result set within the batch. Corresponds to `ResultSetSummary.id`.
+</ParamField>
+
+<ParamField body="rowsStartIndex" type="number" required>
+  0-based index of the first row to return (inclusive).
+</ParamField>
+
+<ParamField body="rowsCount" type="number" required>
+  Number of rows to return. If this exceeds the rows available from `rowsStartIndex`, all remaining rows are returned.
+</ParamField>
+
+### Response
+
+<ResponseField name="resultSubset" type="object">
+  <Expandable title="ResultSetSubset properties" defaultOpen>
+    <ResponseField name="rowCount" type="number">
+      Number of rows actually returned. May be less than `rowsCount` if fewer rows remain.
+    </ResponseField>
+    <ResponseField name="rows" type="object[][]">
+      2D array of `DbCellValue` objects. Each inner array is one row. Each cell has:
+
+      - `displayValue` — the value formatted as a string for display
+      - `isNull` — `true` if the cell is NULL
+      - `invariantCultureDisplayValue` — locale-independent string representation (may be `null`)
+      - `rowId` — 0-based row index within the full result set
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+Request:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "1",
+  "method": "query/subset",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "batchIndex": 0,
+    "resultSetIndex": 0,
+    "rowsStartIndex": 0,
+    "rowsCount": 2
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "1",
+  "result": {
+    "resultSubset": {
+      "rowCount": 2,
+      "rows": [
+        [
+          { "displayValue": "1", "isNull": false, "invariantCultureDisplayValue": null, "rowId": 0 },
+          { "displayValue": "Alice", "isNull": false, "invariantCultureDisplayValue": null, "rowId": 0 }
+        ],
+        [
+          { "displayValue": "2", "isNull": false, "invariantCultureDisplayValue": null, "rowId": 1 },
+          { "displayValue": "Bob", "isNull": false, "invariantCultureDisplayValue": null, "rowId": 1 }
+        ]
+      ]
+    }
+  }
+}
+```
+
+---
+
+## query/executionPlan
+
+Retrieve the execution plan for a specific result set. The result set must have been produced with execution plan capture enabled — pass `executionPlanOptions` when calling `query/executeString` or related methods.
+
+### Parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the query.
+</ParamField>
+
+<ParamField body="batchIndex" type="number" required>
+  0-based index of the batch that produced the execution plan result set.
+</ParamField>
+
+<ParamField body="resultSetIndex" type="number" required>
+  0-based index of the result set within the batch that contains the plan.
+</ParamField>
+
+### Response
+
+<ResponseField name="executionPlan" type="object">
+  <Expandable title="ExecutionPlan properties" defaultOpen>
+    <ResponseField name="format" type="string">
+      The format of the plan content (e.g. `"xml"`).
+    </ResponseField>
+    <ResponseField name="content" type="string">
+      The execution plan content as a string (typically XML).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "query/executionPlan",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "batchIndex": 0,
+    "resultSetIndex": 0
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "result": {
+    "executionPlan": {
+      "format": "xml",
+      "content": "<ShowPlanXML>...</ShowPlanXML>"
+    }
+  }
+}
+```
+
+---
+
+## query/saveCsv
+
+Export a result set to a CSV file on the server's filesystem.
+
+### Parameters
+
+<ParamField body="filePath" type="string" required>
+  Absolute path of the file to write on the server.
+</ParamField>
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the query.
+</ParamField>
+
+<ParamField body="batchIndex" type="number" required>
+  0-based batch index of the result set to export.
+</ParamField>
+
+<ParamField body="resultSetIndex" type="number" required>
+  0-based result set index within the batch.
+</ParamField>
+
+<ParamField body="rowStartIndex" type="number">
+  Inclusive start row index for a selection export. Omit to export all rows.
+</ParamField>
+
+<ParamField body="rowEndIndex" type="number">
+  Inclusive end row index for a selection export. Omit to export all rows.
+</ParamField>
+
+<ParamField body="columnStartIndex" type="number">
+  Inclusive start column index for a selection export. Omit to export all columns.
+</ParamField>
+
+<ParamField body="columnEndIndex" type="number">
+  Inclusive end column index for a selection export. Omit to export all columns.
+</ParamField>
+
+<ParamField body="includeHeaders" type="boolean">
+  When `true`, writes column names as the first row of the CSV. Defaults to `false`.
+</ParamField>
+
+<ParamField body="delimiter" type="string">
+  Column delimiter character. Defaults to `","`.
+</ParamField>
+
+<ParamField body="lineSeperator" type="string">
+  Row separator. Accepted values: `CR`, `LF`, `CRLF`.
+</ParamField>
+
+<ParamField body="textIdentifier" type="string">
+  Quote character used to wrap string values (e.g. `"\""`).
+</ParamField>
+
+<ParamField body="encoding" type="string">
+  File encoding (e.g. `"utf-8"`).
+</ParamField>
+
+### Response
+
+<ResponseField name="messages" type="string">
+  Error description if the save failed. `null` on success.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "query/saveCsv",
+  "params": {
+    "filePath": "C:\\exports\\users.csv",
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "batchIndex": 0,
+    "resultSetIndex": 0,
+    "includeHeaders": true,
+    "delimiter": ",",
+    "lineSeperator": "CRLF",
+    "encoding": "utf-8"
+  }
+}
+```
+
+---
+
+## query/saveExcel
+
+Export a result set to an Excel (`.xlsx`) file.
+
+### Parameters
+
+<ParamField body="filePath" type="string" required>
+  Absolute path of the `.xlsx` file to write.
+</ParamField>
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the query.
+</ParamField>
+
+<ParamField body="batchIndex" type="number" required>
+  0-based batch index of the result set to export.
+</ParamField>
+
+<ParamField body="resultSetIndex" type="number" required>
+  0-based result set index within the batch.
+</ParamField>
+
+<ParamField body="rowStartIndex" type="number">
+  Inclusive start row index for a selection export.
+</ParamField>
+
+<ParamField body="rowEndIndex" type="number">
+  Inclusive end row index for a selection export.
+</ParamField>
+
+<ParamField body="columnStartIndex" type="number">
+  Inclusive start column index for a selection export.
+</ParamField>
+
+<ParamField body="columnEndIndex" type="number">
+  Inclusive end column index for a selection export.
+</ParamField>
+
+<ParamField body="includeHeaders" type="boolean">
+  When `true`, writes column names as the first row.
+</ParamField>
+
+### Response
+
+<ResponseField name="messages" type="string">
+  Error description if the save failed. `null` on success.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "query/saveExcel",
+  "params": {
+    "filePath": "C:\\exports\\users.xlsx",
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "batchIndex": 0,
+    "resultSetIndex": 0,
+    "includeHeaders": true
+  }
+}
+```
+
+---
+
+## query/saveJson
+
+Export a result set to a JSON file.
+
+### Parameters
+
+<ParamField body="filePath" type="string" required>
+  Absolute path of the JSON file to write.
+</ParamField>
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the query.
+</ParamField>
+
+<ParamField body="batchIndex" type="number" required>
+  0-based batch index of the result set to export.
+</ParamField>
+
+<ParamField body="resultSetIndex" type="number" required>
+  0-based result set index within the batch.
+</ParamField>
+
+<ParamField body="rowStartIndex" type="number">
+  Inclusive start row index for a selection export.
+</ParamField>
+
+<ParamField body="rowEndIndex" type="number">
+  Inclusive end row index for a selection export.
+</ParamField>
+
+<ParamField body="columnStartIndex" type="number">
+  Inclusive start column index for a selection export.
+</ParamField>
+
+<ParamField body="columnEndIndex" type="number">
+  Inclusive end column index for a selection export.
+</ParamField>
+
+### Response
+
+<ResponseField name="messages" type="string">
+  Error description if the save failed. `null` on success.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "method": "query/saveJson",
+  "params": {
+    "filePath": "C:\\exports\\users.json",
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "batchIndex": 0,
+    "resultSetIndex": 0
+  }
+}
+```
+
+---
+
+## query/saveXml
+
+Export a result set to an XML file.
+
+### Parameters
+
+<ParamField body="filePath" type="string" required>
+  Absolute path of the XML file to write.
+</ParamField>
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the query.
+</ParamField>
+
+<ParamField body="batchIndex" type="number" required>
+  0-based batch index of the result set to export.
+</ParamField>
+
+<ParamField body="resultSetIndex" type="number" required>
+  0-based result set index within the batch.
+</ParamField>
+
+<ParamField body="rowStartIndex" type="number">
+  Inclusive start row index for a selection export.
+</ParamField>
+
+<ParamField body="rowEndIndex" type="number">
+  Inclusive end row index for a selection export.
+</ParamField>
+
+<ParamField body="columnStartIndex" type="number">
+  Inclusive start column index for a selection export.
+</ParamField>
+
+<ParamField body="columnEndIndex" type="number">
+  Inclusive end column index for a selection export.
+</ParamField>
+
+<ParamField body="formatted" type="boolean">
+  When `true`, writes the XML with indentation. Defaults to `false`.
+</ParamField>
+
+<ParamField body="encoding" type="string">
+  File encoding (e.g. `"utf-8"`).
+</ParamField>
+
+### Response
+
+<ResponseField name="messages" type="string">
+  Error description if the save failed. `null` on success.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 9,
+  "method": "query/saveXml",
+  "params": {
+    "filePath": "C:\\exports\\users.xml",
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "batchIndex": 0,
+    "resultSetIndex": 0,
+    "formatted": true,
+    "encoding": "utf-8"
+  }
+}
+```

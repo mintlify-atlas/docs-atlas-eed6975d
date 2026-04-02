@@ -1,0 +1,259 @@
+---
+title: "Database & connection info"
+description: "List databases, change database, and retrieve connection strings"
+---
+
+## connection/listdatabases
+
+Return the names of all databases accessible on the server associated with an existing connection.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI of an active connection. The databases listed are those visible to the credentials used for this connection.
+</ParamField>
+
+<ParamField body="includeDetails" type="boolean">
+  When `true`, the response may include additional metadata beyond database names. Defaults to `false`.
+</ParamField>
+
+### Response
+
+<ResponseField name="databaseNames" type="string[]" required>
+  Array of database name strings available on the server.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "connection/listdatabases",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "includeDetails": false
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "databaseNames": [
+      "master",
+      "SalesDB",
+      "AnalyticsDB",
+      "HRSystem"
+    ]
+  }
+}
+```
+
+---
+
+## connection/changedatabase
+
+Switch the active database on an existing connection without reopening it. Triggers a `connection/connectionchanged` notification after the change takes effect.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI of the connection whose active database you want to change.
+</ParamField>
+
+<ParamField body="newDatabase" type="string" required>
+  Name of the database to switch to. Must be a database the current login has access to.
+</ParamField>
+
+### Response
+
+`bool` — `true` if the database was changed successfully.
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "connection/changedatabase",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "newDatabase": "AnalyticsDB"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "result": true
+}
+```
+
+---
+
+## connection/getconnectionstring
+
+Build an ADO.NET connection string from an existing connection or a provided `ConnectionDetails` object.
+
+<Note>
+  Passwords are excluded from the returned string by default. Set `includePassword` to `true` only when you have a specific need to embed credentials in the string, and handle the result carefully.
+</Note>
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string">
+  URI of an active connection to build the string from. Either `ownerUri` or `connectionDetails` must be provided.
+</ParamField>
+
+<ParamField body="connectionDetails" type="object">
+  A `ConnectionDetails` object to build the connection string from directly, without requiring an active connection. Either this or `ownerUri` must be provided.
+</ParamField>
+
+<ParamField body="includePassword" type="boolean" default="false">
+  Whether to include the password in the returned connection string. Defaults to `false`.
+</ParamField>
+
+<ParamField body="includeApplicationName" type="boolean" default="true">
+  Whether to include the `Application Name` key-value pair in the connection string. Defaults to `true`.
+</ParamField>
+
+### Response
+
+`string` — A complete ADO.NET connection string, for example:
+
+```
+Server=myserver.database.windows.net;Database=SalesDB;User ID=alice;Encrypt=True;
+```
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "connection/getconnectionstring",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "includePassword": false,
+    "includeApplicationName": true
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "result": "Server=myserver.database.windows.net;Database=SalesDB;User ID=alice;Application Name=sqltools;Encrypt=True;"
+}
+```
+
+You can also build a connection string from a `ConnectionDetails` object without an active connection:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "connection/getconnectionstring",
+  "params": {
+    "connectionDetails": {
+      "serverName": "localhost",
+      "databaseName": "AdventureWorks",
+      "userName": "sa",
+      "authenticationType": "SqlLogin",
+      "encrypt": "Optional"
+    },
+    "includePassword": false,
+    "includeApplicationName": false
+  }
+}
+```
+
+---
+
+## connection/buildconnectioninfo
+
+Parse an ADO.NET connection string and return a structured `ConnectionDetails` object. This is the inverse of `connection/getconnectionstring`.
+
+### Request parameters
+
+The request body is a plain JSON string (not an object):
+
+<ParamField body="(body)" type="string" required>
+  A complete ADO.NET connection string to parse.
+</ParamField>
+
+### Response
+
+A `ConnectionDetails` object with all recognized key-value pairs mapped to their corresponding fields. Fields not present in the connection string are omitted or `null`.
+
+<ResponseField name="serverName" type="string">
+  Parsed value of `Server` or `Data Source`.
+</ResponseField>
+
+<ResponseField name="databaseName" type="string">
+  Parsed value of `Database` or `Initial Catalog`.
+</ResponseField>
+
+<ResponseField name="userName" type="string">
+  Parsed value of `User ID` or `UID`.
+</ResponseField>
+
+<ResponseField name="authenticationType" type="string">
+  Authentication mechanism inferred from the connection string.
+</ResponseField>
+
+<ResponseField name="encrypt" type="string">
+  Parsed value of the `Encrypt` key.
+</ResponseField>
+
+<ResponseField name="trustServerCertificate" type="boolean">
+  Parsed value of `TrustServerCertificate`.
+</ResponseField>
+
+<ResponseField name="connectTimeout" type="number">
+  Parsed value of `Connection Timeout` or `Connect Timeout`.
+</ResponseField>
+
+<ResponseField name="applicationName" type="string">
+  Parsed value of `Application Name`.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "method": "connection/buildconnectioninfo",
+  "params": "Server=myserver.database.windows.net;Database=SalesDB;User ID=alice;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "result": {
+    "serverName": "myserver.database.windows.net",
+    "databaseName": "SalesDB",
+    "userName": "alice",
+    "encrypt": "True",
+    "trustServerCertificate": false,
+    "connectTimeout": 30
+  }
+}
+```

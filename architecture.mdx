@@ -1,0 +1,192 @@
+---
+title: "Architecture"
+description: "How SQL Tools Service is structured and how to integrate it"
+---
+
+SQL Tools Service is a .NET process that exposes all of its functionality through a single JSON-RPC channel over stdio. Your tool spawns it as a child process and exchanges messages by reading and writing the process's standard streams.
+
+## JSON-RPC over stdio
+
+The communication channel is the process's stdin and stdout. There is no HTTP server, no port to bind, and no network configuration — just byte streams.
+
+```
+┌──────────────────────────┐        stdio         ┌────────────────────────────────┐
+│                          │  ─── requests ───▶   │                                │
+│   Host tool (editor,     │                       │  Microsoft.SqlTools.Service    │
+│   IDE extension, etc.)   │  ◀── responses ───   │        Layer process           │
+│                          │  ◀── notifications ─  │                                │
+└──────────────────────────┘                       └────────────────────────────────┘
+```
+
+The service is implemented in `ServiceHost.cs` using a `StdioServerChannel`, which handles all message framing and dispatching:
+
+```csharp
+// ServiceHost.cs
+private ServiceHost() : base(new StdioServerChannel())
+{
+    shutdownCallbacks = new List<ShutdownCallback>();
+    initializeCallbacks = new List<InitializeCallback>();
+}
+```
+
+Request handlers are registered at startup, and all incoming messages are dispatched to the appropriate handler based on the JSON-RPC `method` field.
+
+## Message format
+
+Every message has two parts: an ASCII-encoded header section and a UTF-8 JSON body, separated by `\r\n`.
+
+```
+Content-Length: <byte length of JSON body>\r\n
+\r\n
+<JSON body>
+```
+
+The `Content-Length` header is mandatory and specifies the exact byte length of the JSON body. Read exactly that many bytes after the double `\r\n` separator to get the complete message. Treat the stream as raw bytes — do not use line-oriented text reading.
+
+### Request
+
+Sent by the host tool to the service. Every request must include an `id` that the service echoes back in the response.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connection": {
+      "serverName": "localhost",
+      "databaseName": "master",
+      "userName": "sa",
+      "password": "yourpassword"
+    }
+  }
+}
+```
+
+### Response
+
+Sent by the service in reply to a request. The `id` matches the request.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": true
+}
+```
+
+On failure, `result` is omitted and `error` is present instead:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32602,
+    "message": "Invalid connection parameters"
+  }
+}
+```
+
+### Notification (event)
+
+Sent by the service to the host without a corresponding request. Notifications have no `id` field and require no response. They carry async updates such as connection completion, query progress, or diagnostics.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "connection/complete",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connectionId": "a1b2c3d4-...",
+    "serverInfo": { ... }
+  }
+}
+```
+
+## Owner URIs
+
+Most requests are scoped to an `ownerUri` — a string (typically a file path) that ties a connection and its query state together. When you establish a connection with `connection/connect`, you assign an `ownerUri`. Subsequent requests like `query/executeString` and `query/subset` use the same URI to route to the right connection.
+
+```
+ownerUri: "file:///workspace/myquery.sql"
+          └── connection/connect  (establishes the connection)
+          └── query/executeString (runs a query on this connection)
+          └── query/subset        (fetches results from this connection)
+          └── connection/disconnect (closes the connection)
+```
+
+## Service modules
+
+SQL Tools Service is organized into functional modules. Each module registers its own request handlers when the service starts.
+
+| Module | API prefix | Capabilities |
+|--------|-----------|--------------|
+| Connection | `connection/` | Connect, disconnect, list databases, change database, get connection string |
+| Query Execution | `query/` | Execute SQL, retrieve result subsets, cancel queries, save results to CSV/JSON/Excel/XML |
+| Language Service | `textDocument/`, `completionItem/` | SQL IntelliSense, hover, go-to-definition, signature help, diagnostics, formatting |
+| Object Explorer | `objectExplorer/` | Create sessions, expand nodes, refresh, close sessions, find nodes |
+| Schema / DacFx | `dacfx/` | Extract, publish, compare, and script database schemas |
+| Scripting | `scripting/` | Generate T-SQL scripts for database objects |
+| SQL Agent | `agent/` | Manage SQL Server Agent jobs, alerts, proxies, and schedules |
+| Profiler | `profiler/` | Start and stop extended events sessions |
+| Admin | `admin/` | Create databases, get database info |
+
+The `ServiceHost` registers core lifecycle handlers (`initialize`, `shutdown`, `version`, `capabilities`) and each service module registers its own handlers on top.
+
+## Lifecycle
+
+A typical integration follows this sequence:
+
+```
+1. Spawn Microsoft.SqlTools.ServiceLayer process
+2. Send  initialize  →  receive capabilities response
+3. Send  connection/connect  →  receive  connection/complete  notification
+4. Send  query/executeString  →  receive  query/message  notifications
+                               →  receive  query/complete  notification
+5. Send  query/subset  →  receive result rows
+6. Send  connection/disconnect  →  receive response
+7. Send  shutdown  →  process exits
+```
+
+Some requests complete asynchronously. `connection/connect` returns an immediate acknowledgment, but the actual connection result arrives later as a `connection/complete` notification. Similarly, `query/executeString` returns an empty result immediately, then fires `query/message` and `query/complete` notifications as the query runs.
+
+## Parent process monitoring
+
+If your tool spawns SQL Tools Service as a child process, pass your process ID using the `--parent-process-id` command-line flag. The service will automatically shut down when your process exits, preventing orphaned service processes.
+
+```bash
+Microsoft.SqlTools.ServiceLayer --parent-process-id 12345
+```
+
+This is handled in `Program.cs`:
+
+```csharp
+if (commandOptions.ParentProcessId != null)
+{
+    ProcessExitTimer.Start(commandOptions.ParentProcessId.Value);
+}
+```
+
+## Cross-platform support
+
+SQL Tools Service targets .NET and runs on Windows, macOS, and Linux. The binaries are distributed per-platform on the [GitHub releases page](https://github.com/Microsoft/sqltoolsservice/releases). Choose the archive matching your OS and CPU architecture.
+
+| Platform | Binary name |
+|----------|-------------|
+| Windows x64 | `Microsoft.SqlTools.ServiceLayer.exe` |
+| macOS x64 / arm64 | `Microsoft.SqlTools.ServiceLayer` |
+| Linux x64 | `Microsoft.SqlTools.ServiceLayer` |
+
+## Integration checklist
+
+When building a host tool that integrates SQL Tools Service:
+
+- Spawn the process and attach to its stdin/stdout as **binary streams**, not text streams
+- Read the `Content-Length` header to know exactly how many bytes to read for each message
+- Assign a unique `ownerUri` per SQL file or editor tab
+- Listen for `connection/complete` before sending queries
+- Listen for `query/complete` before calling `query/subset`
+- Pass `--parent-process-id` with your PID to enable automatic cleanup
+- Send `shutdown` and wait for the process to exit cleanly; don't kill it abruptly

@@ -1,0 +1,113 @@
+---
+title: "Testing"
+description: "How to run SQL Tools Service tests"
+---
+
+## Test types
+
+The SQL Tools Service test suite is divided into several categories:
+
+| Type | Description |
+|------|-------------|
+| **Unit tests** | Fast, self-contained tests with no external dependencies. |
+| **Integration tests (connected)** | Tests that execute against a live SQL Server instance. |
+| **Performance tests** | Benchmarks for query execution and service responsiveness. |
+| **Stress tests** | Long-running stability tests. |
+
+## Test structure
+
+Tests live under the `test/` directory in the repo root:
+
+```
+test/
+├── Microsoft.SqlTools.ServiceLayer.UnitTests/
+├── Microsoft.SqlTools.ServiceLayer.IntegrationTests/
+├── Microsoft.SqlTools.ServiceLayer.PerfTests/
+├── Microsoft.SqlTools.ServiceLayer.Test.Common/
+├── Microsoft.SqlTools.ServiceLayer.TestDriver/
+├── Microsoft.SqlTools.ServiceLayer.TestEnvConfig/
+├── Microsoft.SqlTools.Authentication.UnitTests/
+└── Microsoft.SqlTools.ManagedBatchParser.IntegrationTests/
+```
+
+## Running unit tests
+
+Unit tests require no external services. From the repo root, restore packages and then run the test project:
+
+```bash
+dotnet restore
+dotnet test test/Microsoft.SqlTools.ServiceLayer.UnitTests
+```
+
+<Note>
+  The original source documentation references `Microsoft.SqlTools.ServiceLayer.Test` as the test project path. The current repo splits this into `Microsoft.SqlTools.ServiceLayer.UnitTests` and `Microsoft.SqlTools.ServiceLayer.IntegrationTests`. Use the `UnitTests` project for self-contained runs.
+</Note>
+
+### Expected output
+
+A successful run produces output similar to the following. Additional debug output may appear depending on the test runner configuration and execution environment:
+
+```
+xUnit.net .NET CLI test runner (64-bit win10-x64)
+  Discovering: Microsoft.SqlTools.ServiceLayer.Test
+  Discovered:  Microsoft.SqlTools.ServiceLayer.Test
+  Starting:    Microsoft.SqlTools.ServiceLayer.Test
+=== TEST EXECUTION SUMMARY ===
+   Microsoft.SqlTools.ServiceLayer.Test  Total: 434, Errors: 0, Failed: 0, Skipped: 0, Time: 21.139s
+SUMMARY: Total: 1 targets, Passed: 1, Failed: 0.
+```
+
+All entries in the `Failed` column should be `0` before submitting a pull request.
+
+## Running integration tests
+
+Integration (connected) tests require a reachable SQL Server instance. They exercise real connection management, query execution, and other features against a live database.
+
+### Configure SQL Server connection settings
+
+The `TestEnvConfig` project generates a settings file from a template. Copy the template and fill in your server details:
+
+```bash
+cp test/Microsoft.SqlTools.ServiceLayer.TestEnvConfig/SQLConnectionInstancesTemplate.xml \
+   test/Microsoft.SqlTools.ServiceLayer.TestEnvConfig/SQLConnectionInstances.xml
+```
+
+Edit `SQLConnectionInstances.xml` and replace the placeholder values:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Instances>
+  <Instance VersionKey="sqlOnPrem">
+    <DataSource>your-server-name</DataSource>
+    <UserId>your-sql-username</UserId>
+    <Password>your-password</Password>
+  </Instance>
+  <Instance VersionKey="sqlAzure">
+    <DataSource>your-azure-server.database.windows.net</DataSource>
+    <UserId>your-sql-username</UserId>
+    <Password>your-password</Password>
+  </Instance>
+</Instances>
+```
+
+### Azure Storage environment variables (optional)
+
+Some tests exercise backup and restore functionality that requires an Azure Storage Account. Set these environment variables to enable them:
+
+| Variable | Description |
+|----------|-------------|
+| `AzureStorageAccountName` | Name of the Azure Storage Account. |
+| `AzureStorageAccountKey` | Access key for the storage account. |
+| `AzureBlobContainerUri` | Full URL of the blob container, e.g. `https://<account>.blob.core.windows.net/<container>`. |
+
+Tests that depend on these variables are skipped automatically when the variables are not set.
+
+### Run the integration tests
+
+```bash
+dotnet test test/Microsoft.SqlTools.ServiceLayer.IntegrationTests
+```
+
+<Warning>
+  Integration tests modify database state. Run them against a dedicated test SQL Server instance, not a production database.
+</Warning>

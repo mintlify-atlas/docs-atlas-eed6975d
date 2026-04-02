@@ -1,0 +1,254 @@
+---
+title: "Scripting"
+description: "Generate T-SQL scripts for database objects"
+---
+
+The Scripting API generates T-SQL `CREATE`, `ALTER`, `DROP`, and other DDL statements for database objects. You can script specific objects or enumerate all scriptable objects in a database.
+
+## How scripting works
+
+Both operations are asynchronous. A request returns an `operationId` immediately. Results are delivered via a completion event:
+
+- `scripting/script` → fires `scripting/scriptComplete`
+- `scripting/listObjects` → fires `scripting/listObjectsComplete`
+
+Set `returnScriptAsynchronously` to `false` on `scripting/script` to receive the script directly in the response body instead.
+
+---
+
+## scripting/script
+
+Generates T-SQL for one or more database objects.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  Connection URI identifying the source database.
+</ParamField>
+
+<ParamField body="connectionString" type="string">
+  Alternative to `ownerUri` — a full ADO.NET connection string.
+</ParamField>
+
+<ParamField body="scriptingObjects" type="object[]">
+  Explicit list of objects to script. Each entry specifies a `type`, `name`, and optional `schema`.
+
+  <Expandable title="ScriptingObject properties">
+    <ParamField body="type" type="string" required>
+      Object type: `Table`, `View`, `StoredProcedure`, `Function`, `Index`, etc.
+    </ParamField>
+    <ParamField body="name" type="string" required>
+      Object name.
+    </ParamField>
+    <ParamField body="schema" type="string">
+      Schema name (e.g., `dbo`).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="includeObjectCriteria" type="object[]">
+  Criteria-based include filter for bulk scripting (same shape as `scriptingObjects`).
+</ParamField>
+
+<ParamField body="excludeObjectCriteria" type="object[]">
+  Criteria-based exclude filter.
+</ParamField>
+
+<ParamField body="includeSchemas" type="string[]">
+  Limit scripting to objects in these schemas.
+</ParamField>
+
+<ParamField body="excludeSchemas" type="string[]">
+  Skip objects in these schemas.
+</ParamField>
+
+<ParamField body="includeTypes" type="string[]">
+  Limit scripting to these object types.
+</ParamField>
+
+<ParamField body="excludeTypes" type="string[]">
+  Skip these object types.
+</ParamField>
+
+<ParamField body="operation" type="string">
+  The DDL operation to generate: `Create` (default), `Alter`, `Drop`, `Select`, `Insert`, `Update`, `Delete`, or `Execute`.
+</ParamField>
+
+<ParamField body="filePath" type="string">
+  If set, the script is written to this file path instead of being returned in the response.
+</ParamField>
+
+<ParamField body="scriptDestination" type="string">
+  `"ToSingleFile"` (default) or `"ToFilePerObject"` when writing to disk.
+</ParamField>
+
+<ParamField body="returnScriptAsynchronously" type="boolean" default="false">
+  When `false`, the response waits for the script and includes it inline. When `true`, the service returns the operation ID immediately and delivers the script via `scripting/scriptComplete`.
+</ParamField>
+
+<ParamField body="scriptOptions" type="object">
+  Fine-grained scripting options: include headers, check existence, script indexes, triggers, full-text, etc.
+</ParamField>
+
+### Response
+
+<ResponseField name="operationId" type="string" required>
+  Identifier for the scripting task.
+</ResponseField>
+
+<ResponseField name="script" type="string">
+  The generated T-SQL script. Present when `returnScriptAsynchronously` is `false`.
+</ResponseField>
+
+### scriptComplete notification
+
+When `returnScriptAsynchronously` is `true`, the service fires `scripting/scriptComplete`:
+
+<ResponseField name="operationId" type="string">
+  The operation that completed.
+</ResponseField>
+
+<ResponseField name="success" type="boolean">
+  Whether scripting succeeded.
+</ResponseField>
+
+<ResponseField name="errorMessage" type="string">
+  Set if scripting failed.
+</ResponseField>
+
+### Example — synchronous
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "scripting/script",
+  "params": {
+    "ownerUri": "file:///workspace/mydb.sql",
+    "scriptingObjects": [
+      { "type": "Table", "name": "Orders", "schema": "Sales" }
+    ],
+    "operation": "Create",
+    "returnScriptAsynchronously": false
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "operationId": "f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c",
+    "script": "CREATE TABLE [Sales].[Orders] (\n    [OrderId] INT NOT NULL PRIMARY KEY,\n    ...\n);\nGO\n"
+  }
+}
+```
+
+### Example — asynchronous with completion event
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "scripting/script",
+  "params": {
+    "ownerUri": "file:///workspace/mydb.sql",
+    "includeTypes": ["Table", "View"],
+    "includeSchemas": ["dbo"],
+    "operation": "Create",
+    "filePath": "/output/schema.sql",
+    "returnScriptAsynchronously": true
+  }
+}
+
+// Immediate response
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "operationId": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
+  }
+}
+
+// Later: scripting/scriptComplete notification
+{
+  "jsonrpc": "2.0",
+  "method": "scripting/scriptComplete",
+  "params": {
+    "operationId": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+    "success": true
+  }
+}
+```
+
+---
+
+## scripting/listObjects
+
+Enumerates all scriptable objects in a database. Results are delivered via the `scripting/listObjectsComplete` notification.
+
+### Request parameters
+
+<ParamField body="connectionString" type="string" required>
+  Full ADO.NET connection string for the source database.
+</ParamField>
+
+### Response
+
+<ResponseField name="operationId" type="string" required>
+  Identifier for the list operation.
+</ResponseField>
+
+### listObjectsComplete notification
+
+<ResponseField name="operationId" type="string">
+  The operation that completed.
+</ResponseField>
+
+<ResponseField name="scriptingObjects" type="object[]">
+  All scriptable objects found in the database, each with `type`, `name`, and `schema`.
+</ResponseField>
+
+<ResponseField name="count" type="number">
+  Total number of objects returned.
+</ResponseField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "scripting/listObjects",
+  "params": {
+    "connectionString": "Server=localhost;Database=AdventureWorks;Trusted_Connection=True;"
+  }
+}
+
+// Immediate response
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "operationId": "b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e"
+  }
+}
+
+// Later: scripting/listObjectsComplete notification
+{
+  "jsonrpc": "2.0",
+  "method": "scripting/listObjectsComplete",
+  "params": {
+    "operationId": "b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e",
+    "count": 3,
+    "scriptingObjects": [
+      { "type": "Table", "name": "Orders", "schema": "Sales" },
+      { "type": "Table", "name": "Products", "schema": "Production" },
+      { "type": "View",  "name": "OrderSummary", "schema": "Sales" }
+    ]
+  }
+}
+```

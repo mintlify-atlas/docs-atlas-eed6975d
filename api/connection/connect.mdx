@@ -1,0 +1,315 @@
+---
+title: "connect / disconnect"
+description: "Establish and close database connections"
+---
+
+## connection/connect
+
+Open a connection to a database server. The request returns immediately with a `bool` indicating whether the attempt was accepted. The actual outcome arrives as a [`connection/complete`](#connectioncomplete) notification.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  A URI that uniquely identifies the owner of this connection. Typically the absolute path of a SQL file in the workspace, but can be any stable string. All subsequent requests for this connection use this same value.
+</ParamField>
+
+<ParamField body="connection" type="object" required>
+  Connection details. See [ConnectionDetails fields](#connectiondetails-fields) below.
+</ParamField>
+
+<ParamField body="type" type="string" default="Default">
+  The connection type. Defaults to `"Default"`. Use `"Query"` for query execution connections.
+</ParamField>
+
+<ParamField body="purpose" type="string" default="GeneralConnection">
+  A label to track why the connection was opened. Used internally to categorize open connections.
+</ParamField>
+
+### ConnectionDetails fields
+
+<ParamField body="connection.serverName" type="string" required>
+  Hostname or IP address of the SQL Server instance. Append `\instanceName` for named instances.
+</ParamField>
+
+<ParamField body="connection.databaseName" type="string">
+  Name of the database to connect to. If omitted, the server's default database is used.
+</ParamField>
+
+<ParamField body="connection.userName" type="string">
+  SQL login username. Not required when using Windows Authentication or Azure AD.
+</ParamField>
+
+<ParamField body="connection.password" type="string">
+  SQL login password. Omit when using integrated or token-based authentication.
+</ParamField>
+
+<ParamField body="connection.authenticationType" type="string">
+  Authentication mechanism. Common values: `"SqlLogin"`, `"Integrated"`, `"AzureMFA"`.
+</ParamField>
+
+<ParamField body="connection.port" type="number">
+  TCP port to use. Defaults to `1433`.
+</ParamField>
+
+<ParamField body="connection.encrypt" type="string">
+  Encryption mode. Accepted values: `"Optional"`, `"Mandatory"`, `"Strict"`, `"True"`, `"False"`.
+</ParamField>
+
+<ParamField body="connection.trustServerCertificate" type="boolean">
+  When `true`, skips certificate chain validation. Use only in development environments.
+</ParamField>
+
+<ParamField body="connection.hostNameInCertificate" type="string">
+  Expected hostname in the server TLS certificate. Used when the certificate CN differs from the server address.
+</ParamField>
+
+<ParamField body="connection.connectTimeout" type="number">
+  Seconds to wait before timing out the connection attempt.
+</ParamField>
+
+<ParamField body="connection.commandTimeout" type="number">
+  Seconds to wait before timing out an individual command.
+</ParamField>
+
+<ParamField body="connection.applicationName" type="string">
+  Name of the application, included in the connection string and visible in server activity logs.
+</ParamField>
+
+<ParamField body="connection.applicationIntent" type="string">
+  Availability Group workload type. Use `"ReadOnly"` to target a readable secondary replica.
+</ParamField>
+
+<ParamField body="connection.multiSubnetFailover" type="boolean">
+  Set to `true` when connecting to an Always On Availability Group across multiple subnets for faster failover detection.
+</ParamField>
+
+<ParamField body="connection.multipleActiveResultSets" type="boolean">
+  Enable multiple active result sets (MARS) on a single connection.
+</ParamField>
+
+<ParamField body="connection.columnEncryptionSetting" type="string">
+  Enable Always Encrypted. Set to `"Enabled"` to activate client-side column decryption.
+</ParamField>
+
+<ParamField body="connection.azureAccountToken" type="string">
+  Azure AD access token for token-based authentication. Takes precedence over `userName` and `password`.
+</ParamField>
+
+<ParamField body="connection.connectionString" type="string">
+  A complete ADO.NET connection string. When provided, all other `connection.*` fields are ignored.
+</ParamField>
+
+### Response
+
+`bool` — `true` if the connection request was accepted, `false` if it was rejected before attempting. The actual connection result arrives via `connection/complete`.
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "connection": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "SalesDB",
+      "userName": "alice",
+      "password": "s3cr3t",
+      "authenticationType": "SqlLogin",
+      "encrypt": "Mandatory",
+      "trustServerCertificate": false,
+      "connectTimeout": 30
+    }
+  }
+}
+```
+
+---
+
+## connection/complete
+
+A notification sent by the service when a connection attempt finishes. Listen for this event after sending `connection/connect`.
+
+<Note>
+  This is a server-initiated notification, not a response. Its `method` is `"connection/complete"` and it has no `id`.
+</Note>
+
+### Notification fields
+
+<ParamField body="ownerUri" type="string">
+  The URI from the original `connection/connect` request.
+</ParamField>
+
+<ParamField body="connectionId" type="string">
+  A GUID that uniquely identifies the established connection. Present only on success.
+</ParamField>
+
+<ParamField body="connectionSummary" type="object">
+  High-level display info about the connection. Contains `serverName`, `databaseName`, and `userName`.
+</ParamField>
+
+<ParamField body="serverInfo" type="object">
+  Metadata about the connected server instance, including version and edition.
+</ParamField>
+
+<ParamField body="errorMessage" type="string">
+  Human-readable description of the failure. Present only on error.
+</ParamField>
+
+<ParamField body="errorNumber" type="number">
+  SQL Server engine error code. Present only on error.
+</ParamField>
+
+<ParamField body="messages" type="string">
+  Additional diagnostic text accompanying an error.
+</ParamField>
+
+<ParamField body="isSupportedVersion" type="boolean">
+  Whether the connected server version is supported by this service version.
+</ParamField>
+
+<ParamField body="type" type="string">
+  The connection type that completed, matching the `type` from the original request.
+</ParamField>
+
+### Success example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "connection/complete",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "connectionId": "d4f1a3b2-7c88-4e01-9f2a-bc3e10d00001",
+    "connectionSummary": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "SalesDB",
+      "userName": "alice"
+    },
+    "serverInfo": {
+      "serverVersion": "16.0.1000",
+      "serverEdition": "Azure SQL Database"
+    },
+    "isSupportedVersion": true,
+    "type": "Default"
+  }
+}
+```
+
+### Failure example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "connection/complete",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "errorMessage": "Login failed for user 'alice'.",
+    "errorNumber": 18456,
+    "messages": "Error Number:18456, Severity:14, State:1",
+    "type": "Default"
+  }
+}
+```
+
+---
+
+## connection/cancelconnect
+
+Cancel a connection attempt that is still in progress. Has no effect if the connection has already completed.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  The URI of the connection to cancel. Must match the `ownerUri` used in the original `connection/connect` call.
+</ParamField>
+
+<ParamField body="type" type="string" default="Default">
+  The connection type to cancel.
+</ParamField>
+
+### Response
+
+`bool` — `true` if the cancellation was applied, `false` if no matching in-progress connection was found.
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "connection/cancelconnect",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "type": "Default"
+  }
+}
+```
+
+---
+
+## connection/disconnect
+
+Close a connection. Use this when done with a `ownerUri` to release server resources.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  The URI of the connection to close.
+</ParamField>
+
+<ParamField body="type" type="string">
+  The specific connection type to disconnect. If omitted or `null`, all connection types for the given `ownerUri` are disconnected.
+</ParamField>
+
+### Response
+
+`bool` — `true` if the connection was found and closed successfully.
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "connection/disconnect",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql"
+  }
+}
+```
+
+---
+
+## connection/connectionchanged
+
+A notification sent by the service when the properties of an established connection change — for example, when the active database is switched via `connection/changedatabase`.
+
+### Notification fields
+
+<ParamField body="ownerUri" type="string">
+  The URI of the connection that changed.
+</ParamField>
+
+<ParamField body="connection" type="object">
+  Updated `ConnectionSummary` containing the new `serverName`, `databaseName`, and `userName`.
+</ParamField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "connection/connectionchanged",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "connection": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "AnalyticsDB",
+      "userName": "alice"
+    }
+  }
+}
+```

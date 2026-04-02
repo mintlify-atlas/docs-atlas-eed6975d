@@ -1,0 +1,44 @@
+---
+title: "Object Explorer API Overview"
+description: "Browse SQL Server database objects in a hierarchical tree"
+---
+
+The Object Explorer API lets you connect to a SQL Server instance and navigate its database objects — databases, tables, views, stored procedures, and more — as a hierarchical tree. It is the foundation of database browsing in tools like Azure Data Studio and VS Code SQL extensions.
+
+## Session lifecycle
+
+Every Object Explorer interaction is scoped to a **session**. A session represents a live connection to a server and maintains tree state for that connection.
+
+<Steps>
+  <Step title="Create a session">
+    Send `objectexplorer/createSession` with connection details. The service responds immediately with a `sessionId`, then fires the `objectexplorer/sessionCreated` notification once the connection is ready and the root node is available.
+  </Step>
+  <Step title="Expand nodes">
+    Call `objectexplorer/expand` with the `sessionId` and a `nodePath` to load children of any node. The service returns `true` immediately, then fires `objectexplorer/expandCompleted` with the child nodes.
+  </Step>
+  <Step title="Interact with the tree">
+    Use `objectexplorer/refresh` to reload a node's children, or `objectexplorer/findNodes` to search for specific objects by type, schema, or name.
+  </Step>
+  <Step title="Close the session">
+    Send `objectexplorer/closeSession` when done. If the connection drops unexpectedly, the service fires `objectexplorer/sessionDisconnected`.
+  </Step>
+</Steps>
+
+## Methods and notifications
+
+| Method / Notification | Direction | Description |
+|---|---|---|
+| `objectexplorer/createSession` | Client → Service | Open a new session for a connection |
+| `objectexplorer/sessionCreated` | Service → Client | Notification fired when session is ready |
+| `objectexplorer/expand` | Client → Service | Load children of a node |
+| `objectexplorer/refresh` | Client → Service | Force-reload children of a node |
+| `objectexplorer/expandCompleted` | Service → Client | Notification with child node list |
+| `objectexplorer/findNodes` | Client → Service | Search for nodes by type, name, or schema |
+| `objectexplorer/closeSession` | Client → Service | Close a session and release resources |
+| `objectexplorer/sessionDisconnected` | Service → Client | Notification on unexpected disconnection |
+
+## Next steps
+
+<Card title="Sessions and navigation" href="/api/object-explorer/sessions">
+  Full request/response details and JSON examples for every Object Explorer method.
+</Card>

@@ -1,0 +1,429 @@
+---
+title: "IntelliSense and Completions"
+description: "SQL completions, hover info, signature help, and go-to-definition"
+---
+
+All IntelliSense features operate on documents registered via `textDocument/didOpen`. Position parameters use zero-based line and character offsets following the LSP specification.
+
+---
+
+## textDocument/completion
+
+Returns a list of completion items at a given cursor position. The service uses the current connection's schema metadata to produce context-aware suggestions for keywords, table names, column names, schemas, and more.
+
+### Trigger characters
+
+The service triggers completion automatically on `.` (schema/table separator) and space following a SQL keyword. Clients may also invoke completion explicitly.
+
+### Request parameters
+
+<ParamField body="textDocument.uri" type="string" required>
+  URI of the open SQL document.
+</ParamField>
+
+<ParamField body="position.line" type="number" required>
+  Zero-based line number of the cursor.
+</ParamField>
+
+<ParamField body="position.character" type="number" required>
+  Zero-based character offset within the line.
+</ParamField>
+
+<ParamField body="context.triggerKind" type="number">
+  How completion was invoked: `1` = Invoked, `2` = TriggerCharacter, `3` = TriggerForIncompleteCompletions.
+</ParamField>
+
+<ParamField body="context.triggerCharacter" type="string">
+  The character that triggered completion (e.g., `.`).
+</ParamField>
+
+### Response
+
+An array of `CompletionItem` objects.
+
+<ResponseField name="label" type="string" required>
+  The text displayed in the completion list.
+</ResponseField>
+
+<ResponseField name="kind" type="number">
+  LSP completion item kind: `1` = Text, `2` = Method, `3` = Function, `5` = Field, `6` = Variable, `14` = Keyword, `15` = Snippet, `17` = Color, etc.
+</ResponseField>
+
+<ResponseField name="detail" type="string">
+  Short additional info, shown next to the label (e.g., column type, schema name).
+</ResponseField>
+
+<ResponseField name="documentation" type="string | object">
+  Markdown or plaintext documentation for the item.
+</ResponseField>
+
+<ResponseField name="insertText" type="string">
+  Text inserted into the document. Defaults to `label` if omitted.
+</ResponseField>
+
+<ResponseField name="sortText" type="string">
+  Controls ordering in the completion list.
+</ResponseField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "textDocument/completion",
+  "params": {
+    "textDocument": { "uri": "file:///workspace/query.sql" },
+    "position": { "line": 2, "character": 15 },
+    "context": { "triggerKind": 2, "triggerCharacter": "." }
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": [
+    {
+      "label": "Orders",
+      "kind": 5,
+      "detail": "Sales.Orders — Table",
+      "documentation": "Sales order header records.",
+      "insertText": "Orders",
+      "sortText": "0Orders"
+    },
+    {
+      "label": "OrderId",
+      "kind": 5,
+      "detail": "int NOT NULL",
+      "insertText": "OrderId"
+    }
+  ]
+}
+```
+
+---
+
+## completionItem/resolve
+
+Fetches the full documentation and additional details for a single completion item. Clients call this lazily when a user selects an item in the completion list, to avoid computing full documentation for every item upfront.
+
+### Request parameters
+
+Pass the `CompletionItem` object exactly as received from `textDocument/completion`.
+
+### Response
+
+The same `CompletionItem` with `documentation` and `detail` fully populated.
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "completionItem/resolve",
+  "params": {
+    "label": "Orders",
+    "kind": 5,
+    "detail": "Sales.Orders — Table"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "label": "Orders",
+    "kind": 5,
+    "detail": "Sales.Orders — Table",
+    "documentation": {
+      "kind": "markdown",
+      "value": "**Sales.Orders**\n\nSales order header records. Contains one row per sales order."
+    }
+  }
+}
+```
+
+---
+
+## textDocument/hover
+
+Returns documentation and type information for the SQL symbol under the cursor.
+
+### Request parameters
+
+<ParamField body="textDocument.uri" type="string" required>
+  URI of the open SQL document.
+</ParamField>
+
+<ParamField body="position.line" type="number" required>
+  Zero-based line number.
+</ParamField>
+
+<ParamField body="position.character" type="number" required>
+  Zero-based character offset.
+</ParamField>
+
+### Response
+
+<ResponseField name="contents" type="string | object | array" required>
+  Markdown or plaintext hover content. May be a single string, a `MarkupContent` object with `kind` (`plaintext` or `markdown`) and `value`, or an array of strings.
+</ResponseField>
+
+<ResponseField name="range" type="object">
+  The document range that the hover applies to, so editors can highlight the relevant token.
+</ResponseField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "textDocument/hover",
+  "params": {
+    "textDocument": { "uri": "file:///workspace/query.sql" },
+    "position": { "line": 0, "character": 14 }
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "contents": {
+      "kind": "markdown",
+      "value": "**Sales.Orders** *(Table)*\n\nColumns: OrderId, CustomerId, OrderDate, TotalAmount"
+    },
+    "range": {
+      "start": { "line": 0, "character": 12 },
+      "end":   { "line": 0, "character": 18 }
+    }
+  }
+}
+```
+
+---
+
+## textDocument/signatureHelp
+
+Returns parameter signatures for a SQL function or stored procedure at the current cursor position. Triggered automatically when the user types `(` or `,`.
+
+### Request parameters
+
+<ParamField body="textDocument.uri" type="string" required>
+  URI of the open SQL document.
+</ParamField>
+
+<ParamField body="position.line" type="number" required>
+  Zero-based line number.
+</ParamField>
+
+<ParamField body="position.character" type="number" required>
+  Zero-based character offset.
+</ParamField>
+
+### Response
+
+<ResponseField name="signatures" type="object[]">
+  List of signature definitions.
+
+  <Expandable title="SignatureInformation properties">
+    <ResponseField name="label" type="string">
+      Full signature label, e.g., `DATEADD(datepart, number, date)`.
+    </ResponseField>
+    <ResponseField name="documentation" type="string">
+      Description of the function.
+    </ResponseField>
+    <ResponseField name="parameters" type="object[]">
+      Per-parameter labels and documentation.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="activeSignature" type="number">
+  Zero-based index of the active signature.
+</ResponseField>
+
+<ResponseField name="activeParameter" type="number">
+  Zero-based index of the active parameter within the active signature.
+</ResponseField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "textDocument/signatureHelp",
+  "params": {
+    "textDocument": { "uri": "file:///workspace/query.sql" },
+    "position": { "line": 1, "character": 22 }
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "signatures": [
+      {
+        "label": "DATEADD(datepart, number, date)",
+        "documentation": "Adds a number to the specified datepart of a date.",
+        "parameters": [
+          { "label": "datepart", "documentation": "The part of date to add (e.g., year, month, day)." },
+          { "label": "number",   "documentation": "Integer value to add." },
+          { "label": "date",     "documentation": "The date expression to modify." }
+        ]
+      }
+    ],
+    "activeSignature": 0,
+    "activeParameter": 1
+  }
+}
+```
+
+---
+
+## textDocument/definition
+
+Navigates to the definition of the SQL object under the cursor, such as a table, view, or stored procedure.
+
+### Request parameters
+
+<ParamField body="textDocument.uri" type="string" required>
+  URI of the open SQL document.
+</ParamField>
+
+<ParamField body="position.line" type="number" required>
+  Zero-based line number.
+</ParamField>
+
+<ParamField body="position.character" type="number" required>
+  Zero-based character offset.
+</ParamField>
+
+### Response
+
+A `Location` object or array of `Location` objects:
+
+<ResponseField name="uri" type="string" required>
+  URI of the document containing the definition.
+</ResponseField>
+
+<ResponseField name="range" type="object" required>
+  Start and end position of the definition in the target document.
+</ResponseField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "textDocument/definition",
+  "params": {
+    "textDocument": { "uri": "file:///workspace/query.sql" },
+    "position": { "line": 0, "character": 16 }
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "result": {
+    "uri": "file:///workspace/schema/Sales.Orders.sql",
+    "range": {
+      "start": { "line": 0, "character": 0 },
+      "end":   { "line": 0, "character": 35 }
+    }
+  }
+}
+```
+
+---
+
+## textDocument/references
+
+Finds all locations in the workspace where the symbol under the cursor is referenced.
+
+### Request parameters
+
+<ParamField body="textDocument.uri" type="string" required>
+  URI of the open SQL document.
+</ParamField>
+
+<ParamField body="position.line" type="number" required>
+  Zero-based line number.
+</ParamField>
+
+<ParamField body="position.character" type="number" required>
+  Zero-based character offset.
+</ParamField>
+
+<ParamField body="context.includeDeclaration" type="boolean">
+  If `true`, include the symbol's own definition in the results.
+</ParamField>
+
+### Response
+
+An array of `Location` objects, each with `uri` and `range`.
+
+---
+
+## completion/extLoad
+
+Loads an external .NET assembly that contributes custom completion items to the language service. Use this to extend IntelliSense with domain-specific suggestions from a plugin.
+
+### Request parameters
+
+<ParamField body="assemblyPath" type="string" required>
+  Absolute path to the `.dll` file containing the completion extension.
+</ParamField>
+
+<ParamField body="typeName" type="string" required>
+  Fully qualified type name of the class implementing the completion extension interface.
+</ParamField>
+
+<ParamField body="properties" type="object">
+  Key-value property bag passed to the extension during initialization.
+</ParamField>
+
+### Response
+
+`true` if the assembly was loaded successfully; `false` otherwise.
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "completion/extLoad",
+  "params": {
+    "assemblyPath": "/extensions/MyCompletionExtension.dll",
+    "typeName": "MyCompany.Sql.MyCompletionExtension",
+    "properties": {
+      "catalogPath": "/data/catalog.json"
+    }
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "result": true
+}
+```

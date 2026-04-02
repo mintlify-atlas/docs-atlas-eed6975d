@@ -1,0 +1,385 @@
+---
+title: "Sessions and Navigation"
+description: "Create sessions and navigate the database object tree"
+---
+
+## objectexplorer/createSession
+
+Opens an Object Explorer session for a SQL Server connection. The service responds immediately with a `sessionId`, then fires the `objectexplorer/sessionCreated` notification asynchronously once the connection is established.
+
+### Request parameters
+
+<ParamField body="serverName" type="string" required>
+  Hostname or IP address of the SQL Server instance.
+</ParamField>
+
+<ParamField body="databaseName" type="string">
+  Initial database to connect to. Defaults to the server's default database.
+</ParamField>
+
+<ParamField body="userName" type="string">
+  SQL login username. Omit for Windows authentication.
+</ParamField>
+
+<ParamField body="password" type="string">
+  SQL login password.
+</ParamField>
+
+<ParamField body="authenticationType" type="string">
+  Authentication mode: `SqlLogin`, `Integrated`, or `AzureMFA`.
+</ParamField>
+
+### Response
+
+<ResponseField name="sessionId" type="string" required>
+  Unique identifier for this session. Use this in all subsequent requests.
+</ResponseField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "objectexplorer/createSession",
+  "params": {
+    "serverName": "localhost",
+    "databaseName": "AdventureWorks",
+    "userName": "sa",
+    "password": "YourPassword",
+    "authenticationType": "SqlLogin"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "sessionId": "a3f2c1d0-4e5b-4f6a-8c9d-1e2f3a4b5c6d"
+  }
+}
+```
+
+---
+
+## objectexplorer/sessionCreated (notification)
+
+Fired by the service after `createSession` once the connection is ready and the root node is populated.
+
+### Notification parameters
+
+<ResponseField name="sessionId" type="string" required>
+  The session ID returned from `createSession`.
+</ResponseField>
+
+<ResponseField name="success" type="boolean" required>
+  Whether the session was created successfully.
+</ResponseField>
+
+<ResponseField name="errorMessage" type="string">
+  Error details if `success` is `false`.
+</ResponseField>
+
+<ResponseField name="rootNode" type="object">
+  The root tree node for this connection.
+
+  <Expandable title="rootNode properties">
+    <ResponseField name="nodePath" type="string">
+      Unique path identifier for this node.
+    </ResponseField>
+    <ResponseField name="nodeType" type="string">
+      Type of object, e.g., `Server`, `Database`, `Table`.
+    </ResponseField>
+    <ResponseField name="label" type="string">
+      Display label shown in the tree.
+    </ResponseField>
+    <ResponseField name="isLeaf" type="boolean">
+      Whether this node has no children.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "objectexplorer/sessionCreated",
+  "params": {
+    "sessionId": "a3f2c1d0-4e5b-4f6a-8c9d-1e2f3a4b5c6d",
+    "success": true,
+    "rootNode": {
+      "nodePath": "localhost",
+      "nodeType": "Server",
+      "label": "localhost (SQL Server 16.0)",
+      "isLeaf": false
+    }
+  }
+}
+```
+
+---
+
+## objectexplorer/expand
+
+Loads the children of a tree node. Returns `true` immediately; the actual child nodes arrive via the `objectexplorer/expandCompleted` notification.
+
+### Request parameters
+
+<ParamField body="sessionId" type="string" required>
+  The session ID from `createSession`.
+</ParamField>
+
+<ParamField body="nodePath" type="string" required>
+  The path of the node to expand, as returned in `rootNode.nodePath` or a prior `expandCompleted` response.
+</ParamField>
+
+### Response
+
+`true` if the expand request was accepted; `false` otherwise.
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "objectexplorer/expand",
+  "params": {
+    "sessionId": "a3f2c1d0-4e5b-4f6a-8c9d-1e2f3a4b5c6d",
+    "nodePath": "localhost/Databases"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": true
+}
+```
+
+---
+
+## objectexplorer/refresh
+
+Identical in signature to `objectexplorer/expand`, but forces the service to re-query the server rather than returning cached children. Use this after DDL changes to see an updated object list.
+
+<Note>
+  `refresh` uses the same `ExpandParams` shape as `expand` and also fires `objectexplorer/expandCompleted` when complete.
+</Note>
+
+---
+
+## objectexplorer/expandCompleted (notification)
+
+Fired by the service after an `expand` or `refresh` request completes, delivering the list of child nodes.
+
+### Notification parameters
+
+<ResponseField name="sessionId" type="string" required>
+  The session this expansion belongs to.
+</ResponseField>
+
+<ResponseField name="nodePath" type="string" required>
+  Path of the node that was expanded.
+</ResponseField>
+
+<ResponseField name="nodes" type="object[]" required>
+  Array of child nodes.
+
+  <Expandable title="node properties">
+    <ResponseField name="nodePath" type="string">
+      Full path to this node.
+    </ResponseField>
+    <ResponseField name="nodeType" type="string">
+      Object type, e.g., `Database`, `Table`, `StoredProcedure`.
+    </ResponseField>
+    <ResponseField name="label" type="string">
+      Display label for this node.
+    </ResponseField>
+    <ResponseField name="isLeaf" type="boolean">
+      Whether this node can be expanded further.
+    </ResponseField>
+    <ResponseField name="metadata" type="object">
+      Additional metadata such as schema name and object type details.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="errorMessage" type="string">
+  Set if the expansion failed.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "objectexplorer/expandCompleted",
+  "params": {
+    "sessionId": "a3f2c1d0-4e5b-4f6a-8c9d-1e2f3a4b5c6d",
+    "nodePath": "localhost/Databases",
+    "nodes": [
+      {
+        "nodePath": "localhost/Databases/AdventureWorks",
+        "nodeType": "Database",
+        "label": "AdventureWorks",
+        "isLeaf": false
+      },
+      {
+        "nodePath": "localhost/Databases/master",
+        "nodeType": "Database",
+        "label": "master",
+        "isLeaf": false
+      }
+    ]
+  }
+}
+```
+
+---
+
+## objectexplorer/findNodes
+
+Searches for specific database objects within a session without manually traversing the tree.
+
+### Request parameters
+
+<ParamField body="sessionId" type="string" required>
+  The active session to search within.
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  Object type to search for, e.g., `Table`, `View`, `StoredProcedure`.
+</ParamField>
+
+<ParamField body="schema" type="string">
+  Filter results by schema name.
+</ParamField>
+
+<ParamField body="name" type="string">
+  Filter results by object name.
+</ParamField>
+
+<ParamField body="database" type="string">
+  Limit the search to a specific database.
+</ParamField>
+
+### Response
+
+<ResponseField name="nodes" type="object[]">
+  List of matching tree nodes.
+</ResponseField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "objectexplorer/findNodes",
+  "params": {
+    "sessionId": "a3f2c1d0-4e5b-4f6a-8c9d-1e2f3a4b5c6d",
+    "type": "Table",
+    "schema": "Sales",
+    "name": "Orders",
+    "database": "AdventureWorks"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "nodes": [
+      {
+        "nodePath": "localhost/Databases/AdventureWorks/Tables/Sales.Orders",
+        "nodeType": "Table",
+        "label": "Sales.Orders",
+        "isLeaf": false
+      }
+    ]
+  }
+}
+```
+
+---
+
+## objectexplorer/closeSession
+
+Closes the session and releases all associated resources on the service side.
+
+### Request parameters
+
+<ParamField body="sessionId" type="string" required>
+  The session ID to close.
+</ParamField>
+
+### Response
+
+<ResponseField name="sessionId" type="string">
+  The session ID that was closed.
+</ResponseField>
+
+<ResponseField name="success" type="boolean">
+  Whether the session was closed successfully.
+</ResponseField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "objectexplorer/closeSession",
+  "params": {
+    "sessionId": "a3f2c1d0-4e5b-4f6a-8c9d-1e2f3a4b5c6d"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "sessionId": "a3f2c1d0-4e5b-4f6a-8c9d-1e2f3a4b5c6d",
+    "success": true
+  }
+}
+```
+
+---
+
+## objectexplorer/sessionDisconnected (notification)
+
+Fired by the service if the underlying connection for a session drops unexpectedly. The client should treat the session as invalid and create a new one to reconnect.
+
+### Notification parameters
+
+<ResponseField name="sessionId" type="string" required>
+  The session that was disconnected.
+</ResponseField>
+
+<ResponseField name="errorMessage" type="string">
+  Reason for the disconnection.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "objectexplorer/sessionDisconnected",
+  "params": {
+    "sessionId": "a3f2c1d0-4e5b-4f6a-8c9d-1e2f3a4b5c6d",
+    "errorMessage": "Connection lost: network timeout"
+  }
+}
+```

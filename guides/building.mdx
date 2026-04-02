@@ -1,0 +1,111 @@
+---
+title: "Building from source"
+description: "How to build SQL Tools Service from source"
+---
+
+## Prerequisites
+
+Before building SQL Tools Service, you need:
+
+- **[.NET SDK](https://dotnet.microsoft.com/download) 10.0.201 or later** — the repo's `global.json` pins to version `10.0.201` with `latestFeature` roll-forward, so any 10.0.x feature-band release at or above that version works.
+- **[Git](https://git-scm.com/)** — to clone the repository.
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the SQL Tools Service repository from GitHub:
+
+    ```bash
+    git clone https://github.com/Microsoft/sqltoolsservice
+    cd sqltoolsservice
+    ```
+  </Step>
+
+  <Step title="Restore dependencies">
+    Restore all NuGet packages from the repo root:
+
+    ```bash
+    dotnet restore
+    ```
+  </Step>
+
+  <Step title="Build the service">
+    Build the main service layer project:
+
+    ```bash
+    dotnet build src/Microsoft.SqlTools.ServiceLayer
+    ```
+
+    This compiles the `Microsoft.SqlTools.ServiceLayer` project and all of its dependencies.
+  </Step>
+
+  <Step title="Use the build scripts (optional)">
+    The repo ships convenience scripts that wrap the full build and packaging pipeline. Use these when you want a complete, packaged output rather than a development build.
+
+    <CodeGroup>
+
+    ```powershell Windows (build.ps1)
+    # build.cmd delegates to build.ps1 and will be removed in a future release.
+    # Call build.ps1 directly with PowerShell:
+    pwsh -File build.ps1
+    ```
+
+    ```bash Linux / macOS (build.sh)
+    ./build.sh
+    ```
+
+    </CodeGroup>
+
+    The scripts detect the current platform and architecture, set the appropriate .NET runtime identifier (e.g. `linux-x64`, `osx-arm64`, `win-x64`), and invoke the Cake build pipeline.
+
+    <Note>
+      `build.cmd` is a thin wrapper around `build.ps1` and will be removed in a future release. Prefer calling `build.ps1` directly with `pwsh`.
+    </Note>
+  </Step>
+
+  <Step title="Locate the output binary">
+    After a `dotnet build`, the compiled output lands in:
+
+    ```
+    src/Microsoft.SqlTools.ServiceLayer/bin/<Configuration>/<TargetFramework>/
+    ```
+
+    For example, a Debug build targeting .NET 10 produces:
+
+    ```
+    src/Microsoft.SqlTools.ServiceLayer/bin/Debug/net10.0/Microsoft.SqlTools.ServiceLayer
+    ```
+
+    The executable is named `Microsoft.SqlTools.ServiceLayer` (with a `.exe` extension on Windows).
+
+    When using the `build.sh` / `build.ps1` scripts, packaged output is placed in a platform-specific folder under the repo root (e.g. `artifacts/`).
+  </Step>
+
+  <Step title="Run the built binary">
+    Launch the service directly from its output directory:
+
+    <CodeGroup>
+
+    ```bash Linux / macOS
+    ./src/Microsoft.SqlTools.ServiceLayer/bin/Debug/net10.0/Microsoft.SqlTools.ServiceLayer
+    ```
+
+    ```powershell Windows
+    .\src\Microsoft.SqlTools.ServiceLayer\bin\Debug\net10.0\Microsoft.SqlTools.ServiceLayer.exe
+    ```
+
+    </CodeGroup>
+
+    The process communicates over **stdin/stdout** using JSON-RPC 2.0. It does not open a TCP port or print a ready message — your host application should spawn it as a child process and attach to its stdio streams.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="flask-conical" href="/guides/testing">
+    Run unit tests and integration tests against a live SQL Server.
+  </Card>
+  <Card title="Contributing" icon="git-pull-request" href="/guides/contributing">
+    Learn the contribution process and coding guidelines.
+  </Card>
+</CardGroup>

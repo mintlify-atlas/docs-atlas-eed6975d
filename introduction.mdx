@@ -1,0 +1,64 @@
+---
+title: "Introduction"
+description: "What SQL Tools Service is and how it works"
+---
+
+SQL Tools Service is a cross-platform JSON-RPC API service that provides core SQL Server database management functionality to editors and IDE extensions. It runs as a standalone process and communicates with host tools over stdio using the JSON-RPC 2.0 protocol.
+
+## What SQL Tools Service does
+
+The service exposes a comprehensive set of database capabilities through a language-agnostic JSON-RPC interface:
+
+- **Connection management** — establish, manage, and disconnect from SQL Server and Azure SQL databases
+- **Query execution** — run SQL statements and retrieve paginated result sets with full column metadata
+- **Language services** — SQL IntelliSense, hover documentation, signature help, go-to-definition, and diagnostics
+- **Object Explorer** — browse database objects in a hierarchical tree (databases, tables, views, stored procedures, etc.)
+- **Schema tools** — extract, deploy, compare, and script database schemas using DacFx
+- **Scripting** — generate T-SQL scripts for database objects
+- **SQL Agent** — manage SQL Server Agent jobs and alerts
+- **Query Profiler** — capture extended events sessions for query analysis
+
+## Who uses it
+
+SQL Tools Service is the backend engine for Microsoft's SQL tooling in editors:
+
+- **[Azure Data Studio](https://github.com/microsoft/azuredatastudio)** — Microsoft's cross-platform database tool
+- **[mssql extension for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-mssql.mssql)** — SQL Server support in VS Code
+
+Any editor or tool that can spawn a child process and communicate over stdio can integrate with SQL Tools Service.
+
+## Communication model
+
+The service uses JSON-RPC over stdio. When your tool spawns the `Microsoft.SqlTools.ServiceLayer` process, all communication happens by reading and writing its standard input and output streams.
+
+Each message consists of an ASCII-encoded header followed by a UTF-8 JSON body:
+
+```
+Content-Length: 207\r\n
+\r\n
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": { ... }
+}
+```
+
+There are three message types:
+
+| Type | Direction | Description |
+|------|-----------|-------------|
+| Request | Client → Service | Ask the service to do something; expects a response |
+| Response | Service → Client | The result of a request |
+| Notification (Event) | Service → Client | Async updates the service pushes to the client |
+
+The service implements portions of the [Language Server Protocol](https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md) in addition to its own database management API.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Connect to SQL Server and execute your first query in minutes.
+  </Card>
+  <Card title="Architecture" icon="building" href="/architecture">
+    Understand the JSON-RPC protocol, message format, and service modules.
+  </Card>
+</CardGroup>

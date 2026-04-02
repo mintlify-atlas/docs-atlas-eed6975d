@@ -1,0 +1,270 @@
+---
+title: "DacFx Operations"
+description: "Extract, deploy, import, and export database schemas using DacFx"
+---
+
+DacFx (Data-tier Application Framework) is the Microsoft library for packaging and deploying SQL Server schemas. The SQL Tools Service exposes four core DacFx operations over JSON-RPC, each following the same async task pattern.
+
+## Async task pattern
+
+All DacFx operations are long-running. Every request returns a `DacFxResult` immediately with an `operationId`, and the service executes the operation in the background. Poll task status using the task services API, or set `taskExecutionMode` to `"Script"` to preview the generated T-SQL without executing.
+
+### Common response fields
+
+<ResponseField name="operationId" type="string" required>
+  Unique identifier for the background task.
+</ResponseField>
+
+<ResponseField name="operationType" type="string">
+  The type of operation that was started (e.g., `Extract`, `Deploy`).
+</ResponseField>
+
+<ResponseField name="success" type="boolean" required>
+  Whether the request was accepted successfully.
+</ResponseField>
+
+<ResponseField name="errorMessage" type="string">
+  Error details if `success` is `false`.
+</ResponseField>
+
+---
+
+## dacfx/extract
+
+Extracts a live database schema into a `.dacpac` file. Use this to capture a point-in-time schema snapshot for source control or deployment.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  Connection URI identifying the source database connection.
+</ParamField>
+
+<ParamField body="databaseName" type="string" required>
+  Name of the database to extract.
+</ParamField>
+
+<ParamField body="packageFilePath" type="string" required>
+  Absolute path where the `.dacpac` file will be written.
+</ParamField>
+
+<ParamField body="applicationName" type="string" required>
+  Identifier for the DAC application stored in the package metadata.
+</ParamField>
+
+<ParamField body="applicationVersion" type="string" required>
+  Version string for the DAC application (e.g., `"1.0.0.0"`).
+</ParamField>
+
+<ParamField body="extractTarget" type="string">
+  Target format for extraction: `DacPac` (default), `File`, `Flat`, `ObjectType`, `Schema`, or `SchemaObjectType`.
+</ParamField>
+
+<ParamField body="includePermissions" type="boolean">
+  Whether to include database permissions in the package. Defaults to `false`.
+</ParamField>
+
+<ParamField body="taskExecutionMode" type="string">
+  `"Execute"` (default) or `"Script"` to preview without running.
+</ParamField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "dacfx/extract",
+  "params": {
+    "ownerUri": "file:///workspace/mydb.sql",
+    "databaseName": "AdventureWorks",
+    "packageFilePath": "/backups/AdventureWorks.dacpac",
+    "applicationName": "AdventureWorks",
+    "applicationVersion": "1.0.0.0",
+    "taskExecutionMode": "Execute"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "operationId": "b1c2d3e4-f5a6-7b8c-9d0e-1f2a3b4c5d6e",
+    "operationType": "Extract",
+    "success": true
+  }
+}
+```
+
+---
+
+## dacfx/deploy
+
+Deploys a `.dacpac` file to a SQL Server instance, creating or upgrading a database to match the packaged schema.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  Connection URI for the target server.
+</ParamField>
+
+<ParamField body="databaseName" type="string" required>
+  Name of the target database to create or update.
+</ParamField>
+
+<ParamField body="packageFilePath" type="string" required>
+  Absolute path to the `.dacpac` file to deploy.
+</ParamField>
+
+<ParamField body="upgradeExisting" type="boolean" required>
+  If `true`, upgrade an existing database. If `false`, fail if the database already exists.
+</ParamField>
+
+<ParamField body="sqlCommandVariableValues" type="object">
+  Key-value map of SQLCMD variable substitutions for the deployment.
+</ParamField>
+
+<ParamField body="deploymentOptions" type="object">
+  Advanced DacFx deployment options (block on data loss, ignore permissions, etc.).
+</ParamField>
+
+<ParamField body="taskExecutionMode" type="string">
+  `"Execute"` (default) or `"Script"` to generate the deployment script without applying it.
+</ParamField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "dacfx/deploy",
+  "params": {
+    "ownerUri": "file:///workspace/mydb.sql",
+    "databaseName": "AdventureWorks",
+    "packageFilePath": "/backups/AdventureWorks.dacpac",
+    "upgradeExisting": true,
+    "sqlCommandVariableValues": {
+      "EnvironmentName": "Production"
+    },
+    "taskExecutionMode": "Execute"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "operationId": "c2d3e4f5-a6b7-8c9d-0e1f-2a3b4c5d6e7f",
+    "operationType": "Deploy",
+    "success": true
+  }
+}
+```
+
+---
+
+## dacfx/import
+
+Imports a `.bacpac` file into a new database. A BACPAC contains both schema and data, unlike a DACPAC which contains schema only.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  Connection URI for the target server.
+</ParamField>
+
+<ParamField body="databaseName" type="string" required>
+  Name of the new database to create from the BACPAC.
+</ParamField>
+
+<ParamField body="packageFilePath" type="string" required>
+  Absolute path to the `.bacpac` file.
+</ParamField>
+
+<ParamField body="taskExecutionMode" type="string">
+  `"Execute"` (default). Script mode is not supported for import.
+</ParamField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "dacfx/import",
+  "params": {
+    "ownerUri": "file:///workspace/mydb.sql",
+    "databaseName": "RestoredDB",
+    "packageFilePath": "/backups/export.bacpac",
+    "taskExecutionMode": "Execute"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "operationId": "d3e4f5a6-b7c8-9d0e-1f2a-3b4c5d6e7f8a",
+    "operationType": "Import",
+    "success": true
+  }
+}
+```
+
+---
+
+## dacfx/export
+
+Exports a live database — schema plus data — into a `.bacpac` file. Use this for archiving or migrating databases between environments.
+
+### Request parameters
+
+<ParamField body="ownerUri" type="string" required>
+  Connection URI for the source database.
+</ParamField>
+
+<ParamField body="databaseName" type="string" required>
+  Name of the database to export.
+</ParamField>
+
+<ParamField body="packageFilePath" type="string" required>
+  Absolute path where the `.bacpac` file will be written.
+</ParamField>
+
+<ParamField body="taskExecutionMode" type="string">
+  `"Execute"` (default). Script mode is not supported for export.
+</ParamField>
+
+### Example
+
+```json
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "dacfx/export",
+  "params": {
+    "ownerUri": "file:///workspace/mydb.sql",
+    "databaseName": "AdventureWorks",
+    "packageFilePath": "/backups/AdventureWorks.bacpac",
+    "taskExecutionMode": "Execute"
+  }
+}
+
+// Response
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "operationId": "e4f5a6b7-c8d9-0e1f-2a3b-4c5d6e7f8a9b",
+    "operationType": "Export",
+    "success": true
+  }
+}
+```

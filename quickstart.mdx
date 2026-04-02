@@ -1,80 +1,275 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick Start"
+description: "Connect to SQL Server and execute your first query"
 ---
 
-## Get started in three steps
+<Info>
+  SQL Tools Service communicates entirely over stdio using JSON-RPC 2.0. You interact with it by writing messages to its stdin and reading responses from its stdout.
+</Info>
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Download the binaries">
+    Download the SQL Tools Service binaries for your platform from the [GitHub releases page](https://github.com/Microsoft/sqltoolsservice/releases).
 
-### Step 1: Set up your local environment
+    Release builds are labeled with a version number (e.g., `v4.x.x Release`). Daily development builds end with `-alpha`.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    Alternatively, you can build from source:
 
-### Step 2: Deploy your changes
+    ```bash
+    git clone https://github.com/Microsoft/sqltoolsservice
+    cd sqltoolsservice
+    dotnet restore
+    dotnet build src/Microsoft.SqlTools.ServiceLayer
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Step title="Launch the process">
+    Start the service by running the `Microsoft.SqlTools.ServiceLayer` executable. Your host application needs to spawn this as a child process and attach to its stdin and stdout streams.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```bash
+    ./Microsoft.SqlTools.ServiceLayer
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Note>
+      Treat the stdio streams as byte streams rather than text, since header and body parts of messages may use different encodings. The header is ASCII; the body is UTF-8.
+    </Note>
 
-### Step 3: Go live
+    The service runs one instance per SQL workspace. Launch a new process for each top-level folder or project your user works with.
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Send the initialize message">
+    Before sending any other requests, initialize the language server session. This follows the [Language Server Protocol](https://github.com/Microsoft/language-server-protocol/blob/master/protocol.md#initialize) `initialize` request.
+
+    **Request:**
+
+    ```
+    Content-Length: 78\r\n
+    \r\n
+    ```
+
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "rootPath": "/home/user/my-sql-project"
+      }
+    }
+    ```
+
+    The service responds with its capabilities, including supported completion trigger characters, formatting support, hover, and definition providers.
+
+    **Response:**
+
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "capabilities": {
+          "textDocumentSync": 2,
+          "completionProvider": {
+            "resolveProvider": true,
+            "triggerCharacters": [".", ":", "\\", "[", "\""]
+          },
+          "hoverProvider": true,
+          "definitionProvider": true,
+          "documentFormattingProvider": true,
+          "documentRangeFormattingProvider": true,
+          "signatureHelpProvider": {
+            "triggerCharacters": [" ", ","]
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Connect to a database">
+    Send a `connection/connect` request to establish a database connection. The `ownerUri` is a unique identifier (typically a file path) that binds this connection for use in subsequent requests.
+
+    **Request:**
+
+    ```
+    Content-Length: 207\r\n
+    \r\n
+    ```
+
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "connection/connect",
+      "params": {
+        "ownerUri": "file:///home/user/my-sql-project/query.sql",
+        "connection": {
+          "serverName": "localhost",
+          "databaseName": "AdventureWorks",
+          "userName": "sa",
+          "password": "YourPassword123"
+        }
+      }
+    }
+    ```
+
+    Use `"authenticationType": "Integrated"` for Windows Authentication instead of `userName` and `password`.
+
+    The connection completes asynchronously. The service sends a `connection/complete` notification when the connection is established:
+
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "method": "connection/complete",
+      "params": {
+        "ownerUri": "file:///home/user/my-sql-project/query.sql",
+        "connectionId": "a1b2c3d4-...",
+        "connectionSummary": {
+          "serverName": "localhost",
+          "databaseName": "AdventureWorks",
+          "userName": "sa"
+        },
+        "serverInfo": { ... }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Execute a query">
+    Send a `query/executeString` request to run a SQL statement. Use the same `ownerUri` as the connection.
+
+    **Request:**
+
+    ```
+    Content-Length: 153\r\n
+    \r\n
+    ```
+
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "query/executeString",
+      "params": {
+        "ownerUri": "file:///home/user/my-sql-project/query.sql",
+        "query": "SELECT TOP 10 ProductID, Name, ListPrice FROM Production.Product ORDER BY ListPrice DESC"
+      }
+    }
+    ```
+
+    The initial response is empty — it just acknowledges the request was received:
+
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "result": {}
+    }
+    ```
+
+    The service then sends notifications as the query runs. First, `query/message` notifications with row-count updates, then a `query/complete` notification when execution finishes:
+
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "method": "query/complete",
+      "params": {
+        "ownerUri": "file:///home/user/my-sql-project/query.sql",
+        "batchSummaries": [
+          {
+            "id": 0,
+            "hasError": false,
+            "executionStart": "2024-01-15T10:30:00.000Z",
+            "executionEnd": "2024-01-15T10:30:00.042Z",
+            "executionElapsed": "00:00:00.0420000",
+            "resultSetSummaries": [
+              {
+                "id": 0,
+                "batchId": 0,
+                "rowCount": 10,
+                "complete": true,
+                "columnInfo": [
+                  { "columnName": "ProductID", "dataTypeName": "int" },
+                  { "columnName": "Name", "dataTypeName": "nvarchar" },
+                  { "columnName": "ListPrice", "dataTypeName": "money" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Retrieve results">
+    Once you receive `query/complete`, fetch the actual row data with `query/subset`. Use the `batchIndex` and `resultSetIndex` from the `query/complete` summary to identify the result set.
+
+    **Request:**
+
+    ```
+    Content-Length: 178\r\n
+    \r\n
+    ```
+
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "method": "query/subset",
+      "params": {
+        "ownerUri": "file:///home/user/my-sql-project/query.sql",
+        "batchIndex": 0,
+        "resultSetIndex": 0,
+        "rowsStartIndex": 0,
+        "rowsCount": 10
+      }
+    }
+    ```
+
+    **Response:**
+
+    ```json
+    {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "result": {
+        "resultSubset": {
+          "rowCount": 10,
+          "rows": [
+            [
+              { "displayValue": "749", "isNull": false },
+              { "displayValue": "Road-150 Red, 62", "isNull": false },
+              { "displayValue": "3578.27", "isNull": false }
+            ],
+            [
+              { "displayValue": "750", "isNull": false },
+              { "displayValue": "Road-150 Red, 44", "isNull": false },
+              { "displayValue": "3578.27", "isNull": false }
+            ]
+          ]
+        }
+      }
+    }
+    ```
+
+    Rows are returned as 2D arrays of cell values. Each cell has a `displayValue` string and an `isNull` flag. Use `rowsStartIndex` and `rowsCount` to page through large result sets.
+  </Step>
+</Steps>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Architecture" icon="building" href="/architecture">
+    Learn how JSON-RPC over stdio works and how to structure your integration.
+  </Card>
+  <Card title="Connection API" icon="plug" href="/api/connection/overview">
+    Explore the full connection management API.
+  </Card>
+  <Card title="Query API" icon="database" href="/api/query/overview">
+    Execute queries, cancel runs, and export results.
+  </Card>
+  <Card title="Language Service" icon="lightbulb" href="/api/language/overview">
+    Add SQL IntelliSense and diagnostics to your editor.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

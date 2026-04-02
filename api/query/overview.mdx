@@ -1,0 +1,86 @@
+---
+title: "Query API Overview"
+description: "Execute SQL queries and manage result sets"
+---
+
+The Query API lets you run SQL against a connected database and retrieve results. All query operations are scoped to an `ownerUri`—a string identifier (typically a file path or virtual URI) that ties a query to its connection.
+
+## Methods
+
+| Method | Type | Description |
+|---|---|---|
+| `query/executeString` | Request | Execute a SQL string directly |
+| `query/executeDocumentSelection` | Request | Execute a selection from an open document |
+| `query/executedocumentstatement` | Request | Execute a single statement at a cursor position |
+| `query/simpleexecute` | Request | Execute a query and return results synchronously |
+| `query/cancel` | Request | Cancel a running query |
+| `query/dispose` | Request | Release query resources |
+| `query/setexecutionoptions` | Request | Set execution options for a connection |
+| `query/subset` | Request | Retrieve a paginated slice of a result set |
+| `query/executionPlan` | Request | Retrieve the execution plan for a result set |
+| `query/saveCsv` | Request | Export a result set to CSV |
+| `query/saveExcel` | Request | Export a result set to Excel |
+| `query/saveJson` | Request | Export a result set to JSON |
+| `query/saveXml` | Request | Export a result set to XML |
+| `query/message` | Notification (service → client) | Message during query execution |
+| `query/complete` | Notification (service → client) | Query finished; includes summaries |
+
+## Async execution pattern
+
+Most execute methods return immediately with an empty result. Results arrive as server-sent notifications:
+
+```
+Client                          Server
+  |                               |
+  |-- query/executeString ------> |
+  |<- {} (empty ack) ------------ |
+  |                               |
+  |<- query/message ------------- |  (zero or more)
+  |<- query/message ------------- |
+  |                               |
+  |<- query/complete ------------ |  (batch + result set summaries)
+  |                               |
+  |-- query/subset ------------> |  (fetch rows on demand)
+  |<- ResultSetSubset ----------- |
+```
+
+1. Send an execute request.
+2. Receive `query/message` notifications as the server executes each batch — informational messages, row counts, and errors arrive here.
+3. Receive `query/complete` when all batches finish. The payload includes `BatchSummary[]` with nested `ResultSetSummary[]` objects that report how many rows each result set contains.
+4. Call `query/subset` to page through rows from any result set using `batchIndex` and `resultSetIndex` from the summaries.
+5. Call `query/dispose` when you're done to free server-side resources.
+
+## ownerUri scoping
+
+Every request uses `ownerUri` to identify which connection and query to act on. Use the same URI you passed to `connection/connect`. A single `ownerUri` holds one active query at a time. Call `query/dispose` before re-executing if needed, or use separate URIs to run concurrent queries.
+
+## Result set pagination with query/subset
+
+Result rows are not included in `query/complete`. The service buffers them server-side. Use `query/subset` to fetch any window of rows by providing:
+
+- **`batchIndex`** — which batch (from `batchSummaries`)
+- **`resultSetIndex`** — which result set within that batch (from `resultSetSummaries`)
+- **`rowsStartIndex`** — first row to return (0-based, inclusive)
+- **`rowsCount`** — how many rows to return
+
+If `rowsCount` exceeds the rows available from `rowsStartIndex`, all remaining rows are returned.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "2",
+  "method": "query/subset",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "batchIndex": 0,
+    "resultSetIndex": 0,
+    "rowsStartIndex": 0,
+    "rowsCount": 50
+  }
+}
+```
+
+## Further reading
+
+- [Executing queries](/api/query/execute) — execute methods, cancel, dispose, notifications
+- [Results and export](/api/query/results) — fetching rows, execution plans, and saving to files

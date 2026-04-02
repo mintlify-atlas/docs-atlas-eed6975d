@@ -1,97 +1,65 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "SQL Tools Service"
+description: "A cross-platform JSON-RPC API service providing SQL Server database management capabilities for editors and IDE extensions."
 ---
 
-## Setting up
+SQL Tools Service is the backend engine powering SQL tooling in [Azure Data Studio](https://github.com/microsoft/azuredatastudio) and the [mssql extension for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-mssql.mssql). It exposes database management features over a JSON-RPC protocol via stdio, making it easy to integrate into any editor or tool.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Connect to SQL Server and run your first query in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Architecture" icon="building" href="/architecture">
+    Understand the JSON-RPC protocol and service structure.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Connection API" icon="plug" href="/api/connection/overview">
+    Manage connections to SQL Server and Azure SQL databases.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Query API" icon="database" href="/api/query/overview">
+    Execute queries, retrieve results, and export data.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you can do
 
-Everything you need to create world-class documentation.
+SQL Tools Service provides a rich set of capabilities accessible through a simple JSON-RPC interface:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Query Execution" icon="play" href="/api/query/execute">
+    Execute SQL queries and retrieve paginated result sets with full column metadata.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="IntelliSense" icon="lightbulb" href="/api/language/intellisense">
+    Get SQL completions, hover documentation, and signature help.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Object Explorer" icon="folder-tree" href="/api/object-explorer/overview">
+    Browse database objects in a hierarchical tree structure.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Schema Tools" icon="table" href="/api/schema/dacfx">
+    Extract, deploy, compare, and script database schemas.
   </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Get started
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Download the service">
+    Download the SQL Tools Service binary for your platform from the [GitHub releases page](https://github.com/Microsoft/sqltoolsservice/releases).
+  </Step>
+  <Step title="Launch the process">
+    Start the service by running `Microsoft.SqlTools.ServiceLayer` and communicating via its stdin/stdout streams using JSON-RPC messages.
+  </Step>
+  <Step title="Connect to a database">
+    Send a `connection/connect` request with your server details to establish a database connection.
+  </Step>
+  <Step title="Execute queries">
+    Use `query/executeString` to run SQL and `query/subset` to page through results.
+  </Step>
+</Steps>
+
+## Supported platforms
+
+SQL Tools Service runs on Windows, macOS, and Linux. It targets .NET and communicates through stdio, making it embeddable in any application that can spawn a child process.
+
+<Note>
+  SQL Tools Service is used by Azure Data Studio and the VS Code mssql extension. If you're building SQL tooling for editors, this service handles the heavy lifting.
+</Note>

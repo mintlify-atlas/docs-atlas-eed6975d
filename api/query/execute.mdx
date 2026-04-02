@@ -1,0 +1,438 @@
+---
+title: "Executing Queries"
+description: "Execute SQL strings, document selections, and simple queries"
+---
+
+SQL Tools Service provides several ways to execute queries depending on whether you have a raw SQL string, an open document in the workspace, or need a synchronous single-result call.
+
+All standard execute methods return immediately and deliver results asynchronously via `query/message` and `query/complete` notifications. See the [Query API Overview](/api/query/overview) for the full async pattern.
+
+## query/executeString
+
+Execute an arbitrary SQL string on the connection identified by `ownerUri`.
+
+### Parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the connection to execute the query on. Must match the URI used in `connection/connect`.
+</ParamField>
+
+<ParamField body="query" type="string" required>
+  The SQL text to execute. May contain multiple batches separated by `GO`.
+</ParamField>
+
+<ParamField body="executionPlanOptions" type="object">
+  Controls whether execution plan XML is captured alongside the query.
+
+  <Expandable title="executionPlanOptions properties">
+    <ResponseField name="includeActualExecutionPlanXml" type="boolean">
+      Return the actual execution plan as XML in a result set.
+    </ResponseField>
+    <ResponseField name="includeEstimatedExecutionPlanXml" type="boolean">
+      Return the estimated execution plan as XML in a result set.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="getFullColumnSchema" type="boolean">
+  When `true`, the service runs additional queries to retrieve full column schema metadata (precision, scale, etc.). Defaults to `false`.
+</ParamField>
+
+### Response
+
+Returns an empty object `{}`. Results are delivered asynchronously via `query/message` and `query/complete` notifications.
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "query/executeString",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "query": "SELECT id, name FROM dbo.Users WHERE active = 1",
+    "executionPlanOptions": {
+      "includeActualExecutionPlanXml": false,
+      "includeEstimatedExecutionPlanXml": false
+    },
+    "getFullColumnSchema": false
+  }
+}
+```
+
+---
+
+## query/executeDocumentSelection
+
+Execute a specific selection from a document that is open in the workspace service. The document must have been registered with the language service via `textDocument/didOpen`.
+
+### Parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI of the document and connection to execute on.
+</ParamField>
+
+<ParamField body="querySelection" type="object">
+  The region of the document to execute. When omitted, the entire document is executed.
+
+  <Expandable title="querySelection properties">
+    <ResponseField name="startLine" type="number" required>
+      0-based line number where the selection starts.
+    </ResponseField>
+    <ResponseField name="startColumn" type="number" required>
+      0-based column offset where the selection starts.
+    </ResponseField>
+    <ResponseField name="endLine" type="number" required>
+      0-based line number where the selection ends.
+    </ResponseField>
+    <ResponseField name="endColumn" type="number" required>
+      0-based column offset where the selection ends.
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="executionPlanOptions" type="object">
+  Same structure as `query/executeString`. Controls execution plan capture.
+</ParamField>
+
+<ParamField body="getFullColumnSchema" type="boolean">
+  When `true`, retrieves full column schema metadata. Defaults to `false`.
+</ParamField>
+
+### Response
+
+Returns an empty object `{}`. Results arrive via `query/message` and `query/complete`.
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "query/executeDocumentSelection",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "querySelection": {
+      "startLine": 4,
+      "startColumn": 0,
+      "endLine": 6,
+      "endColumn": 42
+    }
+  }
+}
+```
+
+---
+
+## query/executedocumentstatement
+
+Execute the single SQL statement that contains the cursor position at `line` and `column`. The service determines statement boundaries automatically.
+
+### Parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI of the document and connection to execute on.
+</ParamField>
+
+<ParamField body="line" type="number" required>
+  0-based line number of the cursor position within the document.
+</ParamField>
+
+<ParamField body="column" type="number" required>
+  0-based column offset of the cursor position within the document.
+</ParamField>
+
+<ParamField body="executionPlanOptions" type="object">
+  Same structure as `query/executeString`. Controls execution plan capture.
+</ParamField>
+
+<ParamField body="getFullColumnSchema" type="boolean">
+  When `true`, retrieves full column schema metadata. Defaults to `false`.
+</ParamField>
+
+### Response
+
+Returns an empty object `{}`. Results arrive via `query/message` and `query/complete`.
+
+---
+
+## query/simpleexecute
+
+Execute a SQL string and receive all results synchronously in the response body. Unlike the other execute methods, `query/simpleexecute` bypasses the async notification pattern — rows are returned directly.
+
+<Warning>
+  `query/simpleexecute` is intended for lightweight, single-result queries. Use `query/executeString` with `query/subset` for multi-result or large queries.
+</Warning>
+
+### Parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the connection to borrow for execution.
+</ParamField>
+
+<ParamField body="queryString" type="string" required>
+  The SQL text to execute.
+</ParamField>
+
+### Response
+
+<ResponseField name="rowCount" type="number">
+  Total number of rows in the result set.
+</ResponseField>
+
+<ResponseField name="columnInfo" type="object[]">
+  Array of `DbColumnWrapper` objects describing each column (name, data type, size, etc.).
+</ResponseField>
+
+<ResponseField name="rows" type="object[][]">
+  2D array of `DbCellValue` objects. Each inner array is a row; each element has `displayValue`, `isNull`, `invariantCultureDisplayValue`, and `rowId`.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "query/simpleexecute",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "queryString": "SELECT @@VERSION"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "rowCount": 1,
+    "columnInfo": [
+      {
+        "columnName": "",
+        "dataTypeName": "nvarchar",
+        "columnSize": 256
+      }
+    ],
+    "rows": [
+      [
+        {
+          "displayValue": "Microsoft SQL Server 2022 ...",
+          "isNull": false,
+          "invariantCultureDisplayValue": null,
+          "rowId": 0
+        }
+      ]
+    ]
+  }
+}
+```
+
+---
+
+## query/cancel
+
+Cancel the query currently running for the given `ownerUri`. If no query is running, the response `messages` field will describe the situation.
+
+### Parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the query to cancel.
+</ParamField>
+
+### Response
+
+<ResponseField name="messages" type="string">
+  Human-readable description of the cancellation result. `null` on success.
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "query/cancel",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql"
+  }
+}
+```
+
+---
+
+## query/dispose
+
+Release the server-side resources held for a completed query. Call this after you have finished reading result rows with `query/subset`. Disposing a query that does not exist is a no-op.
+
+### Parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI identifying the query whose resources should be freed.
+</ParamField>
+
+### Response
+
+Returns an empty object `{}`.
+
+---
+
+## query/setexecutionoptions
+
+Set query execution options for all subsequent queries on a given `ownerUri`. Options cover ANSI settings, transaction behavior, row count display, and more.
+
+### Parameters
+
+<ParamField body="ownerUri" type="string" required>
+  URI to apply the execution options to.
+</ParamField>
+
+<ParamField body="options" type="object" required>
+  A `QueryExecutionSettings` object. Common fields include `noCount`, `noExec`, `parseOnly`, `arithAbort`, `statisticsTime`, `statisticsIO`, `rowCount`, `textSize`, `executionTimeout`, `transactionIsolationLevel`, and `deadlockPriority`.
+</ParamField>
+
+### Response
+
+Returns `true` on success.
+
+---
+
+## query/message notification
+
+The service sends `query/message` notifications throughout execution. Each notification carries one message — an informational row count, PRINT output, or an error.
+
+### Notification body
+
+<ResponseField name="ownerUri" type="string">
+  URI of the query that produced the message.
+</ResponseField>
+
+<ResponseField name="message" type="object">
+  <Expandable title="message properties" defaultOpen>
+    <ResponseField name="batchId" type="number">
+      0-based index of the batch that generated this message. `null` for messages not associated with a specific batch.
+    </ResponseField>
+    <ResponseField name="isError" type="boolean">
+      `true` if this message represents an error.
+    </ResponseField>
+    <ResponseField name="time" type="string">
+      UTC timestamp in ISO 8601 format.
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      The message text.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "query/message",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "message": {
+      "batchId": 0,
+      "isError": false,
+      "time": "2026-04-02T10:23:45.000Z",
+      "message": "(42 rows affected)"
+    }
+  }
+}
+```
+
+---
+
+## query/complete notification
+
+The service sends a single `query/complete` notification after all batches have finished. This is the signal that execution is done and rows are ready to fetch via `query/subset`.
+
+### Notification body
+
+<ResponseField name="ownerUri" type="string">
+  URI of the query that completed.
+</ResponseField>
+
+<ResponseField name="batchSummaries" type="object[]">
+  Array of `BatchSummary` objects, one per batch.
+
+  <Expandable title="BatchSummary properties" defaultOpen>
+    <ResponseField name="id" type="number">
+      0-based batch index.
+    </ResponseField>
+    <ResponseField name="executionStart" type="string">
+      Localized timestamp when the batch started.
+    </ResponseField>
+    <ResponseField name="executionEnd" type="string">
+      Localized timestamp when the batch finished.
+    </ResponseField>
+    <ResponseField name="executionElapsed" type="string">
+      Human-readable elapsed time for the batch.
+    </ResponseField>
+    <ResponseField name="hasError" type="boolean">
+      `true` if the batch encountered an error that halted execution.
+    </ResponseField>
+    <ResponseField name="selection" type="object">
+      Source range in the document for this batch (`startLine`, `startColumn`, `endLine`, `endColumn`).
+    </ResponseField>
+    <ResponseField name="resultSetSummaries" type="object[]">
+      Array of `ResultSetSummary` objects produced by this batch.
+
+      <Expandable title="ResultSetSummary properties">
+        <ResponseField name="id" type="number">
+          0-based result set index within the batch.
+        </ResponseField>
+        <ResponseField name="batchId" type="number">
+          Index of the parent batch.
+        </ResponseField>
+        <ResponseField name="rowCount" type="number">
+          Total rows available for this result set.
+        </ResponseField>
+        <ResponseField name="complete" type="boolean">
+          `true` when `rowCount` is final and all rows have been fetched by the service.
+        </ResponseField>
+        <ResponseField name="columnInfo" type="object[]">
+          Array of `DbColumnWrapper` objects describing each column.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "query/complete",
+  "params": {
+    "ownerUri": "file:///c:/Users/alice/project/query.sql",
+    "batchSummaries": [
+      {
+        "id": 0,
+        "executionStart": "2026-04-02T10:23:45.000Z",
+        "executionEnd": "2026-04-02T10:23:45.032Z",
+        "executionElapsed": "00:00:00.032",
+        "hasError": false,
+        "resultSetSummaries": [
+          {
+            "id": 0,
+            "batchId": 0,
+            "rowCount": 42,
+            "complete": true,
+            "columnInfo": [
+              { "columnName": "id", "dataTypeName": "int", "columnSize": 4 },
+              { "columnName": "name", "dataTypeName": "varchar", "columnSize": 100 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```

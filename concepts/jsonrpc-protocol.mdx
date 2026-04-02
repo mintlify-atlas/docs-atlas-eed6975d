@@ -1,0 +1,198 @@
+---
+title: "JSON-RPC Protocol"
+description: "The message protocol used to communicate with SQL Tools Service"
+---
+
+SQL Tools Service communicates over standard input/output using a framed JSON-RPC protocol. The same channel carries requests from the client, responses from the service, and notifications in either direction.
+
+## Message Framing
+
+Each message is composed of two parts: a **header section** and a **JSON body**, separated by `\r\n\r\n`.
+
+The header section contains one mandatory field:
+
+| Header Field    | Type   | Description                                         |
+|:----------------|:-------|:----------------------------------------------------|
+| `Content-Length` | number | Byte length of the JSON body (UTF-8 encoded)        |
+| `Content-Type`  | string | Defaults to `application/vscode-jsonrpc; charset=utf8` |
+
+The header itself is ASCII-encoded. Each header field ends with `\r\n`, and the overall header block ends with an additional `\r\n` before the body begins.
+
+```
+Content-Length: 152\r\n
+\r\n
+{"jsonrpc":"2.0","id":1,"method":"connection/connect","params":{...}}
+```
+
+It is recommended to treat the I/O stream as raw bytes rather than text, since the header and body may use different encodings.
+
+## Three Message Types
+
+### Request
+
+Sent by the client when it needs the service to do something. Every request must be answered with a response (unless documented otherwise).
+
+```typescript
+interface RequestMessage {
+  jsonrpc: string;   // always "2.0"
+  id: number | string;
+  method: string;
+  params?: any;
+}
+```
+
+### Response
+
+Sent by the service in reply to a request. The `id` matches the original request's `id`.
+
+```typescript
+interface ResponseMessage {
+  jsonrpc: string;
+  id: number | string;
+  result?: any;
+  error?: ResponseError<any>;
+}
+
+interface ResponseError<D> {
+  code: number;
+  message: string;
+  data?: D;
+}
+```
+
+### Notification (Event)
+
+One-way messages that carry no `id`. The receiver must not send a response. The service sends notifications to inform the client of asynchronous events (such as connection completion or query progress).
+
+```typescript
+interface NotificationMessage {
+  jsonrpc: string;
+  method: string;
+  params?: any;
+}
+```
+
+## Common Fields
+
+| Field      | Present on              | Description                                                   |
+|:-----------|:------------------------|:--------------------------------------------------------------|
+| `jsonrpc`  | all messages            | Always `"2.0"`                                                |
+| `id`       | request, response       | Correlates a response to its request                          |
+| `method`   | request, notification   | The operation name, e.g. `"connection/connect"`               |
+| `params`   | request, notification   | Operation-specific payload object                             |
+| `result`   | response (success)      | Operation-specific return value                               |
+| `error`    | response (failure)      | `ResponseError` object with `code`, `message`, and `data`    |
+
+## Request / Response Pattern
+
+The standard pattern: the client sends a request with a unique `id`; the service processes it and sends a response with the matching `id`.
+
+**Request (client → service):**
+
+```json
+Content-Length: 152
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connection": {
+      "serverName": "localhost",
+      "databaseName": "AdventureWorks",
+      "userName": "sa",
+      "password": "...",
+      "authenticationType": "SqlLogin"
+    }
+  }
+}
+```
+
+**Response (service → client):**
+
+```json
+Content-Length: 37
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": true
+}
+```
+
+## Notification Pattern
+
+Some messages flow in one direction only and carry no `id`. The recipient does not reply.
+
+**Notification (service → client):**
+
+```json
+Content-Length: 178
+
+{
+  "jsonrpc": "2.0",
+  "method": "query/message",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "message": {
+      "batchId": 0,
+      "isError": false,
+      "time": "2024-01-15T10:30:00.000Z",
+      "message": "(1 rows affected)"
+    }
+  }
+}
+```
+
+## Async Request Pattern
+
+Some requests return an empty (or boolean) response immediately, then fire a completion notification later when the actual work finishes. The client should register a handler for the notification before sending the request.
+
+The most common example is `connection/connect`:
+
+1. Client sends `connection/connect` request.
+2. Service responds immediately with `true` (acknowledges receipt).
+3. Service fires `connection/complete` notification when the connection succeeds or fails.
+
+```
+Client                          Service
+  │                               │
+  │── connection/connect ────────►│
+  │◄── { result: true } ──────────│  (immediate acknowledgement)
+  │                               │  (service connects in background)
+  │◄── connection/complete ───────│  (fired when connection finishes)
+  │                               │
+```
+
+The same pattern applies to query execution (`query/executeString` → `query/complete`) and Object Explorer session creation (`objectexplorer/createSession` → `objectexplorer/sessionCreated`).
+
+## Error Handling
+
+When a request fails, the response contains an `error` object instead of `result`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32602,
+    "message": "Invalid params: serverName is required",
+    "data": null
+  }
+}
+```
+
+Standard error codes defined by JSON-RPC:
+
+| Code    | Name                  | Description                        |
+|:--------|:----------------------|:-----------------------------------|
+| -32700  | `ParseError`          | Invalid JSON received              |
+| -32600  | `InvalidRequest`      | JSON is not a valid request object |
+| -32601  | `MethodNotFound`      | Method does not exist              |
+| -32602  | `InvalidParams`       | Invalid method parameters          |
+| -32603  | `InternalError`       | Internal JSON-RPC error            |
+| -32001  | `serverNotInitialized`| Service not yet initialized        |
+| -32099 to -32000 | (reserved) | Server-defined error range    |
+
+Connection-level errors are also reported through the `connection/complete` notification via its `errorMessage` and `errorNumber` fields, which carry the error details from the database engine.

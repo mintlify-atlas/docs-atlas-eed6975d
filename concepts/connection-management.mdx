@@ -1,0 +1,247 @@
+---
+title: "Connection Management"
+description: "How connections are created, scoped, and managed in SQL Tools Service"
+---
+
+SQL Tools Service tracks every connection by an **owner URI**. All connection operations — connecting, querying, disconnecting — reference this URI so the service knows which connection to use.
+
+## The ownerUri Concept
+
+Every connection is bound to an `ownerUri`: a string that uniquely identifies who owns the connection. In practice this is usually an absolute file path (e.g. `file:///workspace/query.sql`) or a virtual URI (e.g. `connection://my-server/AdventureWorks`).
+
+The same URI can hold more than one connection simultaneously if different connection types are requested (see [Connection Types](#connection-types) below). All subsequent operations — query execution, language service features, Object Explorer — reference the `ownerUri` to look up the right connection.
+
+## Connection Lifecycle
+
+```
+connect (connection/connect)
+    │
+    ▼
+[in use — queries, language features, object explorer]
+    │
+    ▼
+disconnect (connection/disconnect)
+```
+
+### 1. Connect
+
+Send a `connection/connect` request. The service acknowledges immediately with `true`, then fires a `connection/complete` notification when the connection succeeds or fails (see [Async Completion](#async-completion) below).
+
+**Request:**
+
+```json
+Content-Length: 285
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "connection/connect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connection": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "AdventureWorks",
+      "userName": "sqladmin",
+      "password": "...",
+      "authenticationType": "SqlLogin"
+    }
+  }
+}
+```
+
+**Response** (immediate acknowledgement):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": true
+}
+```
+
+### 2. Use
+
+Once `connection/complete` reports success, the `ownerUri` can be used in any operation that requires a database connection, such as `query/executeString` or `objectexplorer/createSession`.
+
+### 3. Disconnect
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "connection/disconnect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "type": "Default"
+  }
+}
+```
+
+Omit `type` (or set it to `null`) to disconnect all connection types associated with the URI.
+
+## ConnectionDetails Fields
+
+`ConnectionDetails` is the object passed in the `connection` field of `ConnectParams`. All field names are camelCase in JSON.
+
+### Core fields
+
+| JSON field          | Type    | Description                                         |
+|:--------------------|:--------|:----------------------------------------------------|
+| `serverName`        | string  | Server hostname or IP address (required)            |
+| `databaseName`      | string  | Target database name                                |
+| `userName`          | string  | Login username (SQL Login and some Azure auth modes)|
+| `password`          | string  | Login password (SQL Login only)                     |
+| `authenticationType`| string  | Auth mode: `"SqlLogin"`, `"Integrated"`, `"AzureMFA"`, etc. |
+| `port`              | integer | TCP port (default: 1433)                            |
+
+### Security and encryption
+
+| JSON field              | Type    | Description                                                               |
+|:------------------------|:--------|:--------------------------------------------------------------------------|
+| `encrypt`               | string  | Encryption mode: `"Optional"`, `"Mandatory"`, `"Strict"`, `"True"`, `"False"` |
+| `trustServerCertificate`| boolean | Skip certificate chain validation                                         |
+| `hostNameInCertificate` | string  | Expected hostname in the server certificate                               |
+| `persistSecurityInfo`   | boolean | Whether to return security info on open connections                       |
+| `columnEncryptionSetting`| string | Enable Always Encrypted (`"Enabled"` / `"Disabled"`)                     |
+| `azureAccountToken`     | string  | Pre-acquired Azure AD access token (used with `AzureMFA`)                 |
+| `expiresOn`             | integer | Unix timestamp when `azureAccountToken` expires                           |
+
+### Timeouts and resilience
+
+| JSON field          | Type    | Description                                            |
+|:--------------------|:--------|:-------------------------------------------------------|
+| `connectTimeout`    | integer | Seconds to wait for initial connection                 |
+| `commandTimeout`    | integer | Seconds to wait for a command to complete              |
+| `connectRetryCount` | integer | Number of reconnection attempts on idle failure        |
+| `connectRetryInterval`| integer | Seconds between reconnection attempts               |
+
+### Connection pooling
+
+| JSON field        | Type    | Description                                |
+|:------------------|:--------|:-------------------------------------------|
+| `pooling`         | boolean | Enable connection pooling                  |
+| `maxPoolSize`     | integer | Maximum connections in pool                |
+| `minPoolSize`     | integer | Minimum connections in pool                |
+| `loadBalanceTimeout`| integer | Minimum seconds a connection lives in pool |
+
+### Application and routing
+
+| JSON field          | Type   | Description                                                 |
+|:--------------------|:-------|:------------------------------------------------------------|
+| `applicationName`   | string | Application name sent to SQL Server                        |
+| `applicationIntent` | string | Workload type for Availability Groups: `"ReadWrite"` or `"ReadOnly"` |
+| `workstationId`     | string | Workstation name sent to SQL Server                        |
+| `currentLanguage`   | string | SQL Server language                                        |
+| `multiSubnetFailover`| boolean | Faster failover for AlwaysOn Availability Groups          |
+| `multipleActiveResultSets`| boolean | Enable MARS                                         |
+| `failoverPartner`   | string | Failover partner server name                               |
+| `packetSize`        | integer | Network packet size in bytes                               |
+
+### Other
+
+| JSON field          | Type   | Description                                                     |
+|:--------------------|:-------|:----------------------------------------------------------------|
+| `connectionString`  | string | Raw connection string; if set, all other fields are ignored     |
+| `connectionName`    | string | Display name for the connection                                 |
+| `attachDbFilename`  | string | Path to the primary data file for an attachable database        |
+
+## Connection Types
+
+The `type` field on `ConnectParams` controls what the connection is used for. The default is `"Default"`. Multiple connections with different types can be active on the same `ownerUri`.
+
+| Type value          | Purpose                                  |
+|:--------------------|:-----------------------------------------|
+| `"Default"`         | General-purpose connection               |
+| `"ObjectExplorer"`  | Object Explorer tree browsing            |
+| `"Edit"`            | Edit Data session                        |
+| `"GeneralConnection"`| Background / utility connection         |
+
+## Async Completion
+
+`connection/connect` returns immediately. The actual connection result arrives as a `connection/complete` notification:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "connection/complete",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "connectionId": "a3f1c2e4-...",
+    "errorMessage": null,
+    "errorNumber": 0,
+    "messages": null,
+    "type": "Default",
+    "connectionSummary": {
+      "serverName": "myserver.database.windows.net",
+      "databaseName": "AdventureWorks",
+      "userName": "sqladmin"
+    },
+    "serverInfo": { ... }
+  }
+}
+```
+
+A non-null `errorMessage` or non-zero `errorNumber` indicates the connection failed. Always wait for `connection/complete` before attempting to use the connection.
+
+## Cancelling a Pending Connection
+
+If the connection is taking too long, cancel it with `connection/cancelconnect`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "connection/cancelconnect",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "type": "Default"
+  }
+}
+```
+
+## Listing Databases
+
+To populate a database picker, send `connection/listdatabases`. The connection for the given `ownerUri` must already be established.
+
+**Request:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "connection/listdatabases",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql"
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "databaseNames": ["master", "msdb", "AdventureWorks", "Northwind"]
+  }
+}
+```
+
+## Changing the Active Database
+
+Switch the active database on an existing connection without reconnecting:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "connection/changedatabase",
+  "params": {
+    "ownerUri": "file:///workspace/query.sql",
+    "newDatabase": "Northwind"
+  }
+}
+```
+
+A `connection/connectionchanged` notification is fired afterward to confirm the change.
